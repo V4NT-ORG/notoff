@@ -39,3 +39,22 @@ paths:
 settings:
     shuffle: false
     lint: true
+
+coverage:
+  enabled: true
+  include:
+    - controller/*.php
+    - lib/functions.php # Assuming this is the main file in lib
+    - _lp/lib/Lazyphp/*.php
+    - _lp/lib/Lazyphp/Core/*.php 
+    # Add specific paths to other important PHP files/directories containing logic under www/api
+  exclude:
+    - vendor/*
+    - tests/*
+    - public/*
+    - config/*
+    - contract/* 
+    - docs/*
+    - i18n/*
+    - migrations/*
+    - storage/* # If storage contains PHP files they shouldn't be covered
