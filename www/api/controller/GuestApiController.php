@@ -436,7 +436,7 @@ class GuestApiController
                 if( $data->compare( new \phpseclib\Math\BigInteger('1000000000000000')) >= 0 )
                 {
                     // 当支付过超过 0.001 eth 时
-                    if( !$group_info = db()->getData("SELECT * FROM `group` WHERE `id` = '" . intval( $id ) . "' LIMIT 1")->toLine())
+                    if( !$group_info = db()->getData("SELECT * FROM `group` WHERE `id` = :id LIMIT 1", [':id' => intval($id)])->toLine())
                     {
                         return lianmi_throw( 'INPUT' , '栏目不存在或已被删除' );
                     }
@@ -454,8 +454,8 @@ class GuestApiController
                     // 调用命令行，写入合约
                     // --groupid=1 --price=10000000000000000 --author_address=0xF05949e6d0Ed5148843Ce3f26e0f747095549BB4 --seller_address=0xF05949e6d0Ed5148843Ce3f26e0f747095549BB4
                     
-                    $lastline = exec( 'node --harmony ' . AROOT . DS . 'contract' . DS . 'group.js --groupid=' . intval( $group_info['id'] ) . ' --price=' . bigintval( $group_info['price_wei'] ) . ' --author_address=' . $group_info['author_address'] . ' --seller_address=' . $seller_address , $output , $val );
-
+                    $exec_command = 'node --harmony ' . AROOT . DS . 'contract' . DS . 'group.js --groupid=' . escapeshellarg(strval(intval( $group_info['id'] ))) . ' --price=' . escapeshellarg(strval(bigintval( $group_info['price_wei'] ))) . ' --author_address=' . escapeshellarg($group_info['author_address']) . ' --seller_address=' . escapeshellarg($seller_address);
+                    $lastline = exec( $exec_command , $output , $val );
                     
                     $ret = strtolower(t(join( "" , $output )));
 
@@ -467,7 +467,7 @@ class GuestApiController
                             if( strtolower($data['author']) == strtolower($group_info['author_address']) )
                             {
                                 // 设置正确
-                                db()->runSql( "UPDATE `group` SET `is_paid` = 1 , `is_active` = 1 WHERE `id` = '" . intval( $group_info['id'] ) . "' LIMIT 1" );
+                                db()->runSql( "UPDATE `group` SET `is_paid` = 1 , `is_active` = 1 WHERE `id` = :id LIMIT 1", [':id' => intval($group_info['id'])] );
 
                                 // 将支付人加入到栏目里
                                 //db()->
@@ -522,27 +522,33 @@ class GuestApiController
      */
     public function getGroupFeed2( $id , $since_id = 0 , $filter = 'all' )
     {
+        $info = null;
         if( lianmi_uid() > 0 )
         {
-            $info = db()->getData( "SELECT * FROM `group_member` WHERE `uid` = '" . intval( lianmi_uid() ) . "' AND `group_id` = '" . intval( $id ) . "' LIMIT 1" )->toLine();
+            $info = db()->getData( "SELECT * FROM `group_member` WHERE `uid` = :uid AND `group_id` = :group_id LIMIT 1", [':uid' => intval(lianmi_uid()), ':group_id' => intval($id)] )->toLine();
         }
 
-        // 
-        $filter_sql = '';
-        if( $filter == 'paid' ) $filter_sql = " AND `is_paid` = 1 ";
-        if( $filter == 'media' ) $filter_sql = " AND `images` !='' ";
+        $params_array = [':forward_group_id' => intval($id)];
+        $sql_conditions_string = "`is_delete` != 1 AND `forward_group_id` = :forward_group_id";
         
-        // VIP订户和栏主可以查看付费内容
-        $paid_sql = '';
-
-        if(  $info &&  $info['is_vip'] != 1 && $info['is_author'] != 1 )
-            $paid_sql  = " AND `is_paid` != 1 ";
+        if ($filter == 'paid') $sql_conditions_string .= " AND `is_paid` = 1";
+        if ($filter == 'media') $sql_conditions_string .= " AND `images` != ''";
         
-        $since_sql = $since_id == 0 ? "" : " AND `id` < '" . intval( $since_id ) . "' ";
+        if (isset($info) && $info && $info['is_vip'] != 1 && $info['is_author'] != 1) {
+            $sql_conditions_string .= " AND `is_paid` != 1";
+        }
+        
+        if (intval($since_id) > 0) {
+            $sql_conditions_string .= " AND `id` < :since_id";
+            $params_array[':since_id'] = intval($since_id);
+        }
+        
+        $limit_val = intval(c('feeds_per_page'));
+        // Note: PDO does not directly support parameter binding for LIMIT.
+        // Since $limit_val is derived from a configuration value and cast to int, it's safe.
+        $sql = "SELECT *, `uid` as `user`, `forward_group_id` as `group` FROM `feed` WHERE {$sql_conditions_string} ORDER BY `id` DESC LIMIT {$limit_val}";
 
-        $sql = "SELECT *, `uid` as `user` , `forward_group_id` as `group` FROM `feed` WHERE `is_delete` != 1 AND `forward_group_id` = '". intval( $id ) . "'" . $paid_sql . $since_sql . $filter_sql ." ORDER BY `id` DESC LIMIT " . c('feeds_per_page');
-
-        $data = db()->getData( $sql )->toArray();
+        $data = db()->getData( $sql, $params_array )->toArray();
         $data = extend_field( $data , 'user' , 'user' );
         $data = extend_field( $data , 'group' , 'group' );
         
@@ -560,11 +566,10 @@ class GuestApiController
         $maxid = $minid = null;
 
         // 获取栏目置顶feed
-        $sql = "SELECT * FROM `group` WHERE `id` = '" . intval( $id ) . "' LIMIT 1";
-        $groupinfo = db()->getData($sql)->toLine();
+        $groupinfo = db()->getData("SELECT * FROM `group` WHERE `id` = :id LIMIT 1", [':id' => intval($id)])->toLine();
         if( $groupinfo && isset( $groupinfo['top_feed_id'] ) && intval($groupinfo['top_feed_id']) > 0  )
         {
-            $topfeed = db()->getData("SELECT *, `uid` as `user` , `forward_group_id` as `group` FROM `feed` WHERE `is_delete` != 1 AND `id` = '" . intval($groupinfo['top_feed_id']) . "' LIMIT 1")->toLine();
+            $topfeed = db()->getData("SELECT *, `uid` as `user` , `forward_group_id` as `group` FROM `feed` WHERE `is_delete` != 1 AND `id` = :id LIMIT 1", [':id' => intval($groupinfo['top_feed_id'])])->toLine();
 
             $topfeed = extend_field_oneline( $topfeed, 'user' , 'user' );
             $topfeed = extend_field_oneline( $topfeed, 'group' , 'group' );
@@ -573,7 +578,7 @@ class GuestApiController
         else
             $topfeed = false;
         
-        $paid_feed_count = db()->getData("SELECT COUNT(`id`) FROM `feed` WHERE `is_delete` != 1 AND `forward_group_id` = '". intval( $id ) . "' AND `is_paid` = 1 ")->toVar();    
+        $paid_feed_count = db()->getData("SELECT COUNT(`id`) FROM `feed` WHERE `is_delete` != 1 AND `forward_group_id` = :forward_group_id AND `is_paid` = 1 ", [':forward_group_id' => intval($id)])->toVar();    
 
         return send_result( ['feeds'=>$data , 'count'=>count($data) , 'maxid'=>$maxid , 'minid'=>$minid , 'topfeed' => $topfeed , 'paid_feed_count' => $paid_feed_count ] );
 

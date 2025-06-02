@@ -1,7 +1,7 @@
 import React, { Component } from 'react';
 import { observer , inject } from 'mobx-react';
 import { withRouter, Link } from 'react-router-dom';
-import { translate } from 'react-i18next';
+import { withTranslation } from 'react-i18next';
 
 import { toast , showApiError , inGroup, isApiOk, toInt } from '../util/Function';
 import { Button, ButtonGroup, Callout , Intent, Spinner, NonIdealState } from "@blueprintjs/core";
@@ -15,7 +15,7 @@ import ActivityLink from '../util/ActivityLink';
 import VisibilitySensor from 'react-visibility-sensor';
 import DocumentTitle from 'react-document-title';
 
-@translate()
+@withTranslation()
 @inject("store")
 @withRouter
 @observer

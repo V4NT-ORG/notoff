@@ -2,7 +2,7 @@ import React, { Component } from 'react';
 import { observer , inject } from 'mobx-react';
 import { Link } from "react-router-dom";
 import { withRouter } from 'react-router-dom';
-import { translate } from 'react-i18next';
+import { withTranslation } from 'react-i18next';
 import { AnchorButton, FormGroup, Slider, Intent, InputGroup, Callout } from '@blueprintjs/core';
 import Dropzone from 'react-dropzone';
 import ReactAvatarEditor from 'react-avatar-editor';
@@ -14,7 +14,7 @@ import Web3 from 'web3';
 import Column3Layout from '../component/Column3Layout';
 import UserCard from '../component/UserCard';
 
-@translate()
+@withTranslation()
 @inject("store")
 @withRouter
 @observer

@@ -2,7 +2,7 @@ import React, { Component,Fragment } from 'react';
 import { observer , inject } from 'mobx-react';
 import { Link } from "react-router-dom";
 import { withRouter } from 'react-router-dom';
-import { translate } from 'react-i18next';
+import { withTranslation } from 'react-i18next';
 import { Intent, Spinner, NonIdealState, ButtonGroup, Button } from "@blueprintjs/core";
 
 import Column3Layout from '../component/Column3Layout';
@@ -17,7 +17,7 @@ import BlacklistButton from '../component/BlacklistButton';
 
 
 @withRouter
-@translate()
+@withTranslation()
 @inject("store")
 @observer
 export default class UserDetail extends Component

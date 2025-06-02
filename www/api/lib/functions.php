@@ -148,10 +148,11 @@ function extend_field($array, $field, $table, $join = 'id')
 // 系统消息
 function system_notice($to_uid, $uid, $username, $nickname, $action, $link)
 {
-    if (intval($to_uid) < 1
+    $to_uid_int = intval($to_uid);
+    if ($to_uid_int < 1
     || strlen($username) < 1
     || strlen($nickname) < 1
-    || strlen($uid) < 1
+    || strlen($uid) < 1 // Assuming uid here is a string like username for the notice context
     || strlen($action) < 1
     || strlen($link) < 1
     ) {
@@ -159,13 +160,21 @@ function system_notice($to_uid, $uid, $username, $nickname, $action, $link)
     }
 
     $text = json_encode(compact('username', 'nickname', 'uid', 'action', 'link'));
-    
-    // 因为是系统消息，所以只插入单条消息就够了，毕竟 user 0 也不可能登录系统查看
-    $sql = "INSERT INTO `message` ( `uid` , `from_uid` , `to_uid` , `text` , `timeline` , `is_read` ) VALUES ( '" . intval($to_uid) . "' , '0' , '" . intval($to_uid) . "' , '" . s($text) . "' , '". s(lianmi_now()) ."' , '0' ) ";
-    db()->runSql($sql);
+    $timeline = lianmi_now();
 
-    $sql = "REPLACE INTO `message_group` ( `uid` , `from_uid` , `to_uid` , `text` , `timeline` , `is_read` ) VALUES ( '" . intval($to_uid) . "' , '0' , '" . intval($to_uid) . "' , '" . s($text) . "' , '". s(lianmi_now()) ."' , '0' ) ";
-    db()->runSql($sql);
+    // 因为是系统消息，所以只插入单条消息就够了，毕竟 user 0 也不可能登录系统查看
+    $sql_message = "INSERT INTO `message` ( `uid` , `from_uid` , `to_uid` , `text` , `timeline` , `is_read` ) VALUES ( :uid, 0, :to_uid, :text, :timeline, 0 )";
+    $params_message = [
+        ':uid' => $to_uid_int, // The recipient is the owner of this message entry
+        ':to_uid' => $to_uid_int,
+        ':text' => $text,
+        ':timeline' => $timeline
+    ];
+    db()->runSql($sql_message, $params_message);
+
+    $sql_message_group = "REPLACE INTO `message_group` ( `uid` , `from_uid` , `to_uid` , `text` , `timeline` , `is_read` ) VALUES ( :uid, 0, :to_uid, :text, :timeline, 0 )";
+    // Same params can be used as placeholders match
+    db()->runSql($sql_message_group, $params_message);
 
     return true;
 }
@@ -207,31 +216,31 @@ function extend_field_oneline($array, $field, $table, $join = 'id')
 
 function get_group_info($uid)
 {
-    $uid = intval($uid); // Ensure uid is an integer
+    $uid_int = intval($uid); // Ensure uid is an integer
     $limit = intval(c('max_group_per_user')); // Ensure limit is an integer
 
-    // The SQL needs to have placeholders for limit if we want to parameterize it,
-    // but PDO does not support placeholders for LIMIT. So, intval is the way here.
+    // PDO does not support placeholders for LIMIT. So, intval is the way here.
     $sql = "SELECT * , `group_id` as `group` FROM `group_member` WHERE `uid` = :uid LIMIT {$limit}";
     
     $groups = [];
     $vip_groups = [];
     $admin_groups = [];
-
-    if ($data = db()->getData($sql)->toArray()) {
+    
+    $params = [':uid' => $uid_int];
+    if ($data = db()->getData($sql, $params)->toArray()) { // Pass params here
         $data = extend_field($data, 'group', 'group');
 
         // print_r( $data );
         
         foreach ($data as $item) {
             // 不返回已经关闭的栏目
-            if ($item['group']['is_active'] == 1) {
-                $groups[] = [ 'value' => $item['group_id'] , 'label' => $item['group']['name'] ];
-                if ($item['is_vip'] == 1) {
-                    $vip_groups[] = [ 'value' => $item['group_id'] , 'label' => $item['group']['name'] ];
+            if (isset($item['group']) && is_array($item['group']) && isset($item['group']['is_active']) && $item['group']['is_active'] == 1) {
+                $groups[] = [ 'value' => $item['group_id'] , 'label' => (isset($item['group']['name']) ? $item['group']['name'] : 'N/A') ];
+                if (isset($item['is_vip']) && $item['is_vip'] == 1) {
+                    $vip_groups[] = [ 'value' => $item['group_id'] , 'label' => (isset($item['group']['name']) ? $item['group']['name'] : 'N/A') ];
                 }
-                if ($item['is_author'] == 1) {
-                    $admin_groups[] = [ 'value' => $item['group_id'] , 'label' => $item['group']['name'] ];
+                if (isset($item['is_author']) && $item['is_author'] == 1) {
+                    $admin_groups[] = [ 'value' => $item['group_id'] , 'label' => (isset($item['group']['name']) ? $item['group']['name'] : 'N/A') ];
                 }
             }
         }
@@ -321,7 +330,9 @@ function login_by_stoken($stoken)
         return lianmi_throw("AUTH", "错误的SToken");
     }
 
-    if (!$user = db()->getData($sql = "SELECT * FROM `user` WHERE `stoken` = '" . s($stoken) . "' LIMIT 1")->toLine()) {
+    $sql = "SELECT * FROM `user` WHERE `stoken` = :stoken LIMIT 1";
+    $params = [':stoken' => $stoken];
+    if (!$user = db()->getData($sql, $params)->toLine()) {
         return lianmi_throw("INPUT", "SToken错误 token=`".$stoken."`");
     }
 
@@ -345,7 +356,9 @@ function login_by_stoken($stoken)
     // if( strlen( $user['avatar'] )  < 1 ) $user['avatar'] = c('default_avatar_url');
 
     foreach ([ 'uid' , 'email' , 'nickname' , 'username' , 'level' , 'avatar' ] as $field) {
-        $_SESSION[$field] = $user[$field];
+        if(isset($user[$field])) { // Ensure key exists before assigning to session
+            $_SESSION[$field] = $user[$field];
+        }
     }
 }
 

@@ -14,11 +14,10 @@ import LMIcon from '../Icon';
 import LangIcon from '../component/LangIcon';
 import Header from '../component/Header';
 import UserCard from '../component/UserCard';
-import { t } from 'i18next/dist/commonjs';
-import { translate, Trans } from 'react-i18next';
+import { withTranslation, Trans } from 'react-i18next';
 
 @withRouter
-@translate()
+@withTranslation()
 @inject("store")
 @observer
 export default class Feed extends Component

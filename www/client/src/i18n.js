@@ -1,7 +1,7 @@
 import i18n from 'i18next';
-import Backend from 'i18next-xhr-backend';
+import Backend from 'i18next-http-backend';
 import LanguageDetector from 'i18next-browser-languagedetector';
-import { reactI18nextModule } from 'react-i18next';
+import { initReactI18next } from 'react-i18next';
 import axios from 'axios';
 
 
@@ -10,7 +10,7 @@ const dev_api = 'http://0.0.0.0:8088/';
 i18n
   .use(Backend)
   .use(LanguageDetector)
-  .use(reactI18nextModule)
+  .use(initReactI18next)
   .init({
     fallbackLng: 'en-US',
     lng: localStorage.getItem("i18nextLng") || "en-US",

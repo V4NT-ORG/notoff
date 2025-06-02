@@ -1,7 +1,7 @@
 {
     "require":
     {
-        "php": "^7.4",
+        "php": "^8.1",
         "league/flysystem": "^1.0",
         "pear/math_biginteger": "^1.0",
         "sc0vu/web3.php": "^0.1.4",

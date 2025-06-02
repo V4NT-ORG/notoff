@@ -2,7 +2,7 @@ import React, { Component } from 'react';
 import { observer , inject } from 'mobx-react';
 import { Link } from "react-router-dom";
 import { withRouter } from 'react-router-dom';
-import { translate } from 'react-i18next';
+import { withTranslation } from 'react-i18next';
 import Web3 from 'web3';
 import Column3Layout from '../component/Column3Layout';
 import UserCard from '../component/UserCard';
@@ -12,7 +12,7 @@ import { Icon, Button } from "@blueprintjs/core";
 import DocumentTitle from 'react-document-title';
 
 @withRouter
-@translate()
+@withTranslation()
 @inject("store")
 @observer
 export default class GroupList extends Component
