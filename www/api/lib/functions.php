@@ -95,23 +95,49 @@ function table($name)
 
 function extend_field($array, $field, $table, $join = 'id')
 {
-    if (!is_array($array)) {
+    if (!is_array($array) || empty($array)) {
         return $array;
     }
-    $ids = array_map(function ($item) use ($field) {
-        return "'" . $item[$field] . "'";
-    }, $array);
+    
+    // Collect unique IDs to minimize query parameters
+    $ids_map = [];
+    foreach ($array as $item) {
+        if (isset($item[$field])) {
+            $ids_map[$item[$field]] = true;
+        }
+    }
+    $unique_ids = array_keys($ids_map);
+
+    if (empty($unique_ids)) {
+        return $array;
+    }
+
+    // Create placeholders for IN clause
+    $placeholders = implode(',', array_fill(0, count($unique_ids), '?'));
+    
+    // Sanitize table and join column names (should be from trusted sources, not user input)
+    // For this refactor, we assume $table and $join are safe as they are typically developer-defined.
+    // If they could ever be user-influenced, they'd need strict whitelisting.
+    $safe_table_name = '`' . str_replace('`', '', $table) . '`';
+    $safe_join_column = '`' . str_replace('`', '', $join) . '`';
 
     if ($table == 'user') {
-        $sql = "SELECT " . c('user_normal_fields') . " FROM `" . s($table) . "` WHERE `" . s($join) . "` IN ( " . join(',', $ids) . " )";
+        $select_fields = c('user_normal_fields'); // Assumed to be safe string of fields
+        if (empty($select_fields)) $select_fields = '*'; // Fallback if config is empty
     } else {
-        $sql = "SELECT * FROM `" . s($table) . "` WHERE `" . s($join) . "` IN ( " . join(',', $ids) . " )";
+        $select_fields = '*';
     }
+
+    $sql = "SELECT {$select_fields} FROM {$safe_table_name} WHERE {$safe_join_column} IN ( {$placeholders} )";
     
-    if ($data = db()->getData($sql)->toIndexedArray($join)) {
+    // db()->getData now expects parameters as the second argument.
+    // The toIndexedArray method will be called on the result of getData.
+    $fetched_data_results = db()->getData($sql, $unique_ids)->toIndexedArray($join);
+
+    if ($fetched_data_results) {
         foreach ($array as $key => $item) {
-            if (isset($data[$item[$field]])) {
-                $array[$key][$field] = $data[$item[$field]];
+            if (isset($item[$field]) && isset($fetched_data_results[$item[$field]])) {
+                $array[$key][$field] = $fetched_data_results[$item[$field]];
             }
         }
     }
@@ -146,20 +172,33 @@ function system_notice($to_uid, $uid, $username, $nickname, $action, $link)
 
 function extend_field_oneline($array, $field, $table, $join = 'id')
 {
-    if (!is_array($array)) {
+    if (!is_array($array) || !isset($array[$field])) {
         return $array;
     }
-    $id = $array[$field];
+    $id_value = $array[$field]; // This could be an ID or an object if already extended.
+                               // Assuming it's an ID for the purpose of this SQL.
+                               // If $id_value is an array (already extended), this will likely fail or act unexpectedly.
+                               // This function might need more robust checking of $id_value's type.
+    if (is_array($id_value)) { // Already extended, do nothing
+        return $array;
+    }
+
+
+    // Sanitize table and join column names
+    $safe_table_name = '`' . str_replace('`', '', $table) . '`';
+    $safe_join_column = '`' . str_replace('`', '', $join) . '`';
 
     if ($table == 'user') {
-        $sql = "SELECT " . c('user_normal_fields') . " FROM `" . s($table) . "` WHERE `" . s($join) . "` =  " . intval($id) . "  LIMIT 1";
+        $select_fields = c('user_normal_fields');
+        if (empty($select_fields)) $select_fields = '*';
     } else {
-        $sql = "SELECT * FROM `" . s($table) . "` WHERE `" . s($join) . "` = " . intval($id) . "  LIMIT 1";
+        $select_fields = '*';
     }
+
+    $sql = "SELECT {$select_fields} FROM {$safe_table_name} WHERE {$safe_join_column} = :id_value LIMIT 1";
+    $params = [':id_value' => $id_value];
     
-    // echo $sql;
-    
-    if ($line = db()->getData($sql)->toLine()) {
+    if ($line = db()->getData($sql, $params)->toLine()) {
         $array[$field] = $line;
     }
 
@@ -168,7 +207,12 @@ function extend_field_oneline($array, $field, $table, $join = 'id')
 
 function get_group_info($uid)
 {
-    $sql = "SELECT * , `group_id` as `group`  FROM `group_member` WHERE `uid` = '" . intval($uid) . "' LIMIT ".c('max_group_per_user');
+    $uid = intval($uid); // Ensure uid is an integer
+    $limit = intval(c('max_group_per_user')); // Ensure limit is an integer
+
+    // The SQL needs to have placeholders for limit if we want to parameterize it,
+    // but PDO does not support placeholders for LIMIT. So, intval is the way here.
+    $sql = "SELECT * , `group_id` as `group` FROM `group_member` WHERE `uid` = :uid LIMIT {$limit}";
     
     $groups = [];
     $vip_groups = [];

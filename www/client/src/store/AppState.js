@@ -4,6 +4,7 @@ import { saveAs } from 'file-saver';
 
 const API_BASE = process.env.REACT_APP_API_BASE;
 const STORAGE_KEY = 'lianmi2';
+const DARK_MODE_KEY = STORAGE_KEY + '.darkMode';
 
 class AppState
 {
@@ -12,6 +13,7 @@ class AppState
     @observable appname = "NotOnlyFans";  
     @observable domain = "notonlyfans.vip";  
     
+    @observable darkMode = false;
 
     @observable draft_viponly = true;
     @observable draft_images = [];
@@ -29,6 +31,10 @@ class AppState
     @observable im_to_uid = -1;
     @observable im_position = { x: window.innerWidth/2-200 ,y:50 };
 
+    // For Search
+    @observable searchResults = [];
+    @observable searchingFeeds = false;
+    @observable searchQuery = ""; // To store the current query, useful for display or re-fetching
     
     @computed get draft_action ()
     {
@@ -70,7 +76,25 @@ class AppState
         const user = JSON.parse( localStorage.getItem( STORAGE_KEY+'.user' ));
         if( user ) this.user = user;
 
-        
+        const storedDarkMode = localStorage.getItem(DARK_MODE_KEY);
+        if (storedDarkMode) {
+            this.darkMode = JSON.parse(storedDarkMode);
+        }
+        this.applyDarkModeClass();
+    }
+
+    @action toggleDarkMode = () => {
+        this.darkMode = !this.darkMode;
+        localStorage.setItem(DARK_MODE_KEY, JSON.stringify(this.darkMode));
+        this.applyDarkModeClass();
+    }
+
+    applyDarkModeClass() {
+        if (this.darkMode) {
+            document.body.classList.add('bp3-dark', 'app-dark-mode');
+        } else {
+            document.body.classList.remove('bp3-dark', 'app-dark-mode');
+        }
     }
 
     @action openIm( uid )
@@ -649,31 +673,47 @@ class AppState
         params.append("password" , password);
 
         const result = await axios.post( API_BASE + 'user/login' , params );
-        console.log( result );
+        // console.log( result ); // Keep console.log removed if it was previously
         
         if( result.data.data && result.data.data.token && result.data.data.token.length > 1 )
         {
-            /*
-            this.user.token = result.data.data.token;
-            this.user.id = result.data.data.id;
-            this.user.username = result.data.data.username;
-            this.user.nickname = result.data.data.nickname;
-            this.user.email = result.data.data.email;
-            this.user.level = result.data.data.level;
-            this.user.avatar = result.data.data.avatar;
-            this.user.groupcount = result.data.data.groupcount;
-            this.user.feedcount = result.data.data.feedcount;
-            this.user.upcount = result.data.data.upcount;
-            */
             this.user = result.data.data;
             this.user.uid = result.data.data.id;
             this.saveData();
         }
-            
-        
         return result;    
     }
 
+    @action async searchFeeds(query, page = 1) {
+        if (!query || query.trim() === "") {
+            this.searchResults = [];
+            this.searchQuery = "";
+            return;
+        }
+        this.searchingFeeds = true;
+        this.searchQuery = query;
+        this.searchResults = []; // Clear previous results
+
+        try {
+            const params = new URLSearchParams();
+            params.append('q', query);
+            params.append('page', page);
+            // No token needed if it's a guest accessible endpoint as implemented on backend
+            const response = await axios.get(API_BASE + 'feed/search', { params });
+            if (response.data && response.data.code === 0) {
+                this.searchResults = response.data.data || [];
+            } else {
+                this.searchResults = [];
+                // Optionally, handle API error messages from response.data.message
+            }
+        } catch (error) {
+            // console.error("Search feeds error:", error);
+            this.searchResults = [];
+            // Optionally, set an error message state to display to user
+        } finally {
+            this.searchingFeeds = false;
+        }
+    }
 }
 
 export default new AppState();

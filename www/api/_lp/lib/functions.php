@@ -69,7 +69,12 @@ function c( $key , $subkey = null )
 
 }
 // == 数据库相关函数 ==========================
-function s( $str ){ return trim(db()->quote($str),"'"); }
+function s( $str ){ 
+    // This function is now primarily for non-SQL contexts or dynamic query parts (use with extreme caution).
+    // For parameters in SQL queries, use prepared statements.
+    return trim(db()->quote($str),"'"); 
+}
+
 function db()
 {
     if( !isset( $GLOBALS['_LP4_DB'] ) )
@@ -78,24 +83,24 @@ function db()
     return  $GLOBALS['_LP4_DB'];
 }
 
-function get_data( $sql )
+function get_data( $sql, $params = [] )
 {
-    return db()->getData($sql)->toArray();
+    return db()->getData($sql, $params)->toArray();
 }
 
-function get_line( $sql )
+function get_line( $sql, $params = [] )
 {
-    return db()->getData($sql)->toLine();
+    return db()->getData($sql, $params)->toLine();
 }
 
-function get_var( $sql )
+function get_var( $sql, $params = [] )
 {
-    return db()->getData($sql)->toVar();
+    return db()->getData($sql, $params)->toVar();
 }
 
-function run_sql( $sql )
+function run_sql( $sql, $params = [] )
 {
-    return db()->runSql( $sql );
+    return db()->runSql( $sql, $params );
 }
 
 function get_bind_params( $sql )

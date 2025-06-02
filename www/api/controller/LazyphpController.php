@@ -92,9 +92,17 @@ class LazyphpController
             
             if( is_array( $mention_string ) && count( $mention_string ) > 0 )
             {
-                echo $sql = "SELECT `id` FROM `user` WHERE `username` IN ( " . join( ',' , $mention_string ) . " )";
+                // For IN clauses with prepared statements, we need placeholders.
+                // $mention_string currently creates elements like "'user1'", "'user2'".
+                // For prepared statements, we need the raw values and then use placeholders.
+                // The $mention array from lianmi_at() contains the raw usernames.
+                
+                $placeholders = implode(',', array_fill(0, count($mention), '?'));
+                $sql = "SELECT `id` FROM `user` WHERE `username` IN ( " . $placeholders . " )";
+                
+                echo "SQL: " . $sql . "\nParams: " . print_r($mention, true); // For debugging
 
-                if( $mention_uids = db()->getData( $sql )->toColumn('id'))
+                if( $mention_uids = db()->getData( $sql, $mention )->toColumn('id')) // Pass $mention directly
                 print_r( $mention_uids );
                     // foreach( $mention_uids as $muid )
                     // {
