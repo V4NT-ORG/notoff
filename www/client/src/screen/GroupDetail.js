@@ -1,17 +1,16 @@
 import React, { Component, Fragment } from 'react';
 import { observer , inject } from 'mobx-react';
-import { Link } from "react-router-dom";
+// Link not directly used
 import { withRouter } from 'react-router-dom';
 import { withTranslation } from 'react-i18next';
 import { toast , showApiError , inGroup, isApiOk } from '../util/Function';
-import { Button, ButtonGroup, Callout , Intent, Spinner, NonIdealState } from "@blueprintjs/core";
+import { Button, ButtonGroup, Intent, Spinner, NonIdealState } from "@blueprintjs/core"; // Callout removed
 import BackButton from '../component/BackButton'; 
 
 import Web3 from 'web3';
 
 import Column3Layout from '../component/Column3Layout';
 import GroupCard from '../component/GroupCard';
-// import BuyVipButtonFo from '../component/BuyVipButtonFo';
 import BuyVipButton from '../component/BuyVipButton';
 import FeedItem from '../component/FeedItem'; 
 import ActivityLink from '../util/ActivityLink';
@@ -25,293 +24,279 @@ import DocumentTitle from 'react-document-title';
 @observer
 export default class GroupDetail extends Component
 {
-    state = {"group":{},"loaded":false,"feeds":[],"since_id":0,"loading":false,"paid_feed_count":0};
+    state = {
+        group: {},
+        loaded: false,
+        feeds: [],
+        since_id: 0,
+        loading: false,
+        paid_feed_count: 0,
+        topfeed: null, // Added topfeed to state
+    };
 
-    componentDidMount()
-    {
-       this.loadGroupInfo(); 
-       this.loadFeed( true );
-    }
-
-    async componentDidUpdate(prevProps) 
-    {
-        if (this.props.location !== prevProps.location) 
-        {
-            await this.loadFeed( true , 0 );
+    componentDidMount() {
+        const groupId = this.props.match.params.id;
+        if (groupId) {
+            this.loadGroupInfo(groupId); 
+            this.loadFeed(groupId, true, 0);
+        } else {
+            // Handle missing group ID, e.g., redirect or show error
+            this.props.history.push("/groups"); // Example redirect
         }
     }
 
-    async loadFeed( clean = false , sid = null )
-    {
-        const web3 = new Web3(Web3.givenProvider);
-        const { t } = this.props;
-        const gid = this.props.match.params.id;
-        const since_id = sid === null ? this.state.since_id : sid;
-        
-        let filter = 'all';
-        if( this.props.match.params.filter)
-        {
-            if( this.props.match.params.filter == 'paid' ) filter = 'paid';
-            if( this.props.match.params.filter == 'media' ) filter = 'media';
-        } 
+    async componentDidUpdate(prevProps) {
+        const oldGroupId = prevProps.match.params.id;
+        const newGroupId = this.props.match.params.id;
+        const oldFilter = prevProps.match.params.filter;
+        const newFilter = this.props.match.params.filter;
 
-        const { data } = await this.props.store.getGroupFeed( gid , since_id , filter );
-        this.setState({"loading":false});
+        if (newGroupId && oldGroupId !== newGroupId) {
+            this.setState({ group: {}, loaded: false, feeds: [], since_id: 0, loading: false, topfeed: null, paid_feed_count: 0 });
+            this.loadGroupInfo(newGroupId);
+            this.loadFeed(newGroupId, true, 0);
+        } else if (oldFilter !== newFilter && newGroupId) {
+            this.setState({ feeds: [], since_id: 0, loading: false, topfeed: null }); // Keep paid_feed_count from groupInfo
+            this.loadFeed(newGroupId, true, 0);
+        }
+    }
+    
+    getFilterFromPath = () => {
+        const { filter } = this.props.match.params;
+        if (filter === 'paid') return 'paid';
+        if (filter === 'media') return 'media';
+        return 'all';
+    }
 
-        if( isApiOk( data ) )
-        {
-            if( data.data !=  undefined  )
-            {
-                
-                // if( data.data.topfeed &&  data.data.topfeed.files )
-                // {
-                //     const  fdata = JSON.parse( data.data.topfeed.files );
-                //     if( fdata.url && fdata.name  )
-                //         data.data.topfeed.files =  [fdata];
-                //     else
-                //         data.data.topfeed.files = false;
-                // }
-                
-                if( data.data.topfeed && data.data.feeds )
-                {
-                    data.data.feeds = data.data.feeds.filter( item => item.id != data.data.topfeed.id );
-                }
-                
-                if( !Array.isArray(data.data.feeds) ) data.data.feeds =[];
-                
-                let since_id_new = null;
-                if( data.data.minid !=  null )
-                {
-                    const minid = parseInt( data.data.minid , 10 );
-                    since_id_new = minid;
-                }
-                
-                const newdata = clean ? data.data.feeds :this.state.feeds.concat(data.data.feeds);
+    loadFeed = async (groupId, clean = false, sid = null) => {
+        if (this.state.loading && !clean) return;
+        this.setState({ loading: true });
 
-                if( since_id_new === null )
-                    this.setState({"feeds":newdata,"topfeed":data.data.topfeed,"paid_feed_count":data.data.paid_feed_count});
-                else  
-                    this.setState({"feeds":newdata,"topfeed":data.data.topfeed,"since_id":since_id_new,"paid_feed_count":data.data.paid_feed_count});  
+        const { t, store } = this.props;
+        const since_id_to_load = sid === null ? this.state.since_id : sid;
+        const currentFilter = this.getFilterFromPath();
+
+        const { data } = await store.getGroupFeed(groupId, since_id_to_load, currentFilter);
+        this.setState({ loading: false });
+
+        if (isApiOk(data) && data.data) {
+            let newFeeds = data.data.feeds && Array.isArray(data.data.feeds) ? data.data.feeds : [];
+            const topFeedData = data.data.topfeed || null;
+            
+            if (topFeedData && newFeeds.length > 0) { // Ensure topfeed is not duplicated in feeds list
+                newFeeds = newFeeds.filter(item => item.id !== topFeedData.id);
             }
+
+            let next_since_id = this.state.since_id;
+            if (data.data.minid != null) {
+                next_since_id = parseInt(data.data.minid, 10);
+            } else if (newFeeds.length === 0 && !clean) {
+                next_since_id = 0; 
+            }
+            
+            const combinedFeeds = clean ? newFeeds : [...(this.state.feeds || []), ...newFeeds];
+
+            this.setState({
+                feeds: combinedFeeds,
+                topfeed: clean ? topFeedData : (this.state.topfeed || topFeedData), // Only update topfeed on clean load or if not set
+                since_id: next_since_id,
+                paid_feed_count: data.data.paid_feed_count !== undefined ? data.data.paid_feed_count : this.state.paid_feed_count,
+            });  
+        } else {
+            if (clean) this.setState({ feeds: [], topfeed: null });
+            showApiError(data, t);
         }
-        else showApiError( data , t );
     }
 
-    async loadGroupInfo()
-    {
-        const { t } = this.props;
-        const gid = this.props.match.params.id;
-        
-        if( parseInt( gid , 10  )> 0 )
-        {
-            const { data } = await this.props.store.getGroupDetail( gid );
-            console.log( data );
-            if( !showApiError( data , t )  )
-            {
-                // 检查开启状态
-                if( parseInt( data.data.is_active , 10 ) == 0 )
-                {
+    loadGroupInfo = async (groupId) => {
+        const { t, store, history } = this.props;
+        if (parseInt(groupId, 10) > 0) {
+            const { data } = await store.getGroupDetail(groupId);
+            if (!showApiError(data, t)) {
+                if (parseInt(data.data.is_active, 10) === 0) {
                     toast(t("栏目不存在或已被关闭"));
-                    this.props.history.push("/groups");
-                    return false;
+                    history.push("/groups");
+                    return;
                 }
-                else
-                {
-                    this.setState( { "group":data.data,"loaded":true } );
-                }
-                
-            }   
+                this.setState({ group: data.data, loaded: true, paid_feed_count: data.data.paid_feed_count || 0 });
+            } else {
+                 history.push("/groups"); // Redirect if error loading group
+            }  
         }
     }
 
-    async join( groupid )
-    {
-        // alert(groupid);
-        const { t } = this.props;
-        const { data } = await this.props.store.joinGroup( groupid );
-        if( !showApiError( data , t )  )
-        {
-            const { data } = await this.props.store.updateUserInfo();
-            if( !showApiError( data , t )  )
-            {
+    handleJoinGroup = async (groupId) => {
+        const { t, store } = this.props;
+        const { data: joinData } = await store.joinGroup(groupId);
+        if (!showApiError(joinData, t)) {
+            const { data: userInfoData } = await store.updateUserInfo();
+            if (!showApiError(userInfoData, t)) {
                 toast(t("您已成功订阅栏目"));
-                this.loadGroupInfo();
-                this.loadFeed( true , 0 );
+                this.loadGroupInfo(groupId); // Reload group info to reflect new member status potentially
+                this.loadFeed(groupId, true, 0); // Refresh feeds
             }
-            //this.props.store.user.group_count ++;
-            //window.location.reload();
         } 
     }
 
-    async quit( groupid )
-    {
-        const { t } = this.props;
-        
-        if( window.confirm( t("确定要取消订阅吗？退出后VIP订户需要重新购买哦~😯") ) )
-        {
-            const { data } = await this.props.store.quitGroup( groupid );
-            if( !showApiError( data , t )  )
-            {
-                const { data } = await this.props.store.updateUserInfo();
-                if( !showApiError( data , t )  )
-                {
+    handleQuitGroup = async (groupId) => {
+        const { t, store } = this.props;
+        if (window.confirm(t("确定要取消订阅吗？退出后VIP订户需要重新购买哦~😯"))) {
+            const { data: quitData } = await store.quitGroup(groupId);
+            if (!showApiError(quitData, t)) {
+                const { data: userInfoData } = await store.updateUserInfo();
+                if (!showApiError(userInfoData, t)) {
                     toast(t("您已成功取消订阅"));
-                    this.loadGroupInfo();
+                    this.loadGroupInfo(groupId);
                 }
             } 
         }
-        
-        
     }
 
-    feedloading( visible )
-    {
-        if( visible )
-        {
-            // 发生变动且能看到底部，进行数据加载
-            if( this.state.since_id != 0 )
-            {
-                this.setState({"loading":true});
-                setTimeout(() => {
-                    this.loadFeed();
-                }, 0);
-            }
-                
+    handleVisibilityChange = (isVisible) => {
+        const groupId = this.props.match.params.id;
+        if (isVisible && this.state.since_id !== 0 && !this.state.loading && this.state.loaded && groupId) {
+            this.loadFeed(groupId);
         }
-        //console.log(e);
     }
 
-    contribute()
-    {
-        this.props.history.push('/group/contribute/todo');
-    }
+    navigateTo = (path) => this.props.history.push(path);
 
-    member()
-    {
-        this.props.history.push('/group/member/'+this.state.group.id);
-    }
-
-    settings()
-    {
-        this.props.history.push('/group/settings/'+this.state.group.id);
-    }
-
-    render()
-    {
-        const { t } = this.props;
-        const web3 = new Web3(Web3.givenProvider);
-        const is_member = this.props.store.user.groups && inGroup( this.state.group.id , this.props.store.user.groups );
-
-        const is_admin = this.props.store.user.admin_groups && inGroup( this.state.group.id , this.props.store.user.admin_groups ) ;
-
-        const is_self = this.state.group &&  this.state.group.author_uid == this.props.store.user.id;
-
+    render() {
+        const { t, store, location } = this.props;
+        const { group, loaded, feeds, topfeed, loading, since_id, paid_feed_count } = this.state;
         
-        const main = <div className="blocklist groupdetailbox">
-
-            <BackButton/>
-            
-            {/* { !is_member && this.state.loaded ?  <div className="notmember">
-                <Callout intent={Intent.PRIMARY} className="joincall">
-                <p>{t("你不是栏目订户，只有加入后才能查看栏目内容。")}</p>
-                </Callout>
+        if (!loaded && loading && !group.id) { // Initial loading state for the whole page
+            return (
+                <div className="flex justify-center items-center h-screen">
+                    <Spinner intent={Intent.PRIMARY} size={Spinner.SIZE_LARGE} />
                 </div>
-            :*/}
-            { this.state.loaded && <Fragment>{ this.state.topfeed && <div><ul className="feedlist top">
-            <FeedItem data={this.state.topfeed} key={this.state.topfeed.id} in_group={true}/> 
-            </ul></div>
-            }
-
-            <div className="feedfilter sticky">
-                {/* <div className="hot">
-                <ActivityLink label={t("热门")} to="/hot" activeOnlyWhenExact={true}/>
-                </div> */}
-                <div className="all">
-                <ActivityLink label={t("全部")} to={"/group/"+this.state.group.id} activeOnlyWhenExact={true}/>
+            );
+        }
+        if (!group.id && loaded) { // Group not found or error, and not loading anymore
+             return (
+                <div className="flex justify-center items-center h-screen">
+                    <NonIdealState title={t("错误")} description={t("无法加载栏目信息。")} icon="error" />
                 </div>
-                {/* <div className="free">
-                    <ActivityLink label=label={t("免费")} to="/free" />
-                </div> */}
-                <div className="paid">
-                    <ActivityLink label={t("付费")} to={"/group/paid/"+this.state.group.id} />
-                </div>
-                <div className="media">
-                <ActivityLink label={t("图片")} to={"/group/media/"+this.state.group.id} />
-                </div>
-            </div>
+            );
+        }
 
-            { this.state.feeds.length > 0 && <div><ul className="feedlist">
-                {this.state.feeds.map( (item) => <FeedItem data={item} key={item.id} in_group={true}/> ) } 
-            </ul>
-            { this.state.loading && <div className="hcenter"><Spinner intent={Intent.PRIMARY} small={true} /></div> }
-            <VisibilitySensor onChange={(e)=>this.feedloading(e)}/>
-            </div>
-            }
 
-            { this.state.feeds.length < 1 && <NonIdealState className="padding40"
-                    visual="search"
-                    title={t("还没有内容")}
-                    description={t("没有符合条件的内容")}
-                    
-                /> }</Fragment>
-            
-            }
+        const web3 = new Web3(Web3.givenProvider || "http://localhost:8545");
+        const is_member = store.user.groups && inGroup(group.id, store.user.groups);
+        const is_admin = store.user.admin_groups && inGroup(group.id, store.user.admin_groups);
+        // const is_self = group && group.author_uid === store.user.id; // is_self not used in this render
 
-            
-           
-            
+        const pageTitle = (group.name || t("栏目详情")) + '@' + t(store.appname);
 
-            
-            
-        </div>;
+        const filterLinkBaseClasses = "py-2 px-4 text-sm font-medium text-center rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500";
+        const filterLinkActiveClasses = "text-white bg-blue-600 hover:bg-blue-700";
+        const filterLinkInactiveClasses = "text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600";
 
-        const left = <div className="groupleft px10list">
-            <GroupCard group={this.state.group}/>
-            <div className="groupactionbar">
-            { !is_member && this.state.loaded && <div className="freenotice px10list">
-                <div className="button">
-                <Button text={t("免费订阅")} intent={Intent.PRIMARY} onClick={()=>this.join(this.state.group.id)} large={true}/>
-                </div>
-                <div className="detail">
-                {t("订阅后可在首页显示更新")}
-                </div>
-            </div>
-            }
-            { is_member && !is_admin && this.state.loaded && <div className="membernotice px10list">
-                <div className="button">
-                <BuyVipButton group={this.state.group} className="pt-large pt-intent-primary" text={t("购买VIP")+" · "+web3.utils.fromWei( this.state.group.price_wei + '' , 'ether' )+'Ξ'} renewaltext={t("VIP订户 · 续费")}/>
-                </div>
-                <div className="detail">
-                { this.state.paid_feed_count > 0 ? t("VIP订户可以看到栏目中的"+ this.state.paid_feed_count +"篇付费内容") : t("VIP订户可以看到栏目中的付费内容") }
-                </div> 
-                <div className="quit">
-                    <span onClick={()=>this.quit(this.state.group.id)}>{t("取消订阅")}</span>
-                </div>    
-            </div>
-            }
-
-            </div>
-            { inGroup( this.state.group.id , this.props.store.user.admin_groups ) && this.state.loaded && <div className="px10list whitebox vcenter hcenter flexcol">
-                <div><ButtonGroup large={false} minimal={true}>
-                {this.state.group.todo_count>0 && <Button text={t("投稿 · ")+this.state.group.todo_count} icon="inbox" intent={Intent.PRIMARY} onClick={()=>this.contribute()} />} 
-                {this.state.group.todo_count < 1 && <Button text={t("投稿")} icon="inbox" intent={Intent.NONE} onClick={()=>this.contribute()} />} 
-
-                {this.state.group.member_count>0 && <Button text={this.state.group.member_count} icon="people" intent={Intent.NONE} onClick={()=>this.member()}/>}
-
-                {this.state.group.member_count<1 && <Button  icon="people" intent={Intent.NONE} onClick={()=>this.member()}/>}
-
-                { is_admin && <Button icon="cog" intent={Intent.NONE} onClick={()=>this.settings()}/>}
-
-                </ButtonGroup></div>
+        const mainContent = (
+            <div className="space-y-4">
+                <BackButton className="mb-4" />
                 
-                {/* <div className="detail">
-                {t("管理选项")}
-                </div> */}
-                
-            </div>
-            }
-        </div>;
+                {loaded && (
+                    <Fragment>
+                        {topfeed && (
+                            <ul className="border-2 border-yellow-400 dark:border-yellow-600 rounded-lg mb-4"> {/* Highlight top feed */}
+                                <FeedItem data={topfeed} key={topfeed.id + "-top"} in_group={true} /> 
+                            </ul>
+                        )}
 
-        return <DocumentTitle title={this.state.group.name+'@'+t(this.props.store.appname)}><Column3Layout left={left} main={main} /></DocumentTitle>
+                        <div className="sticky top-16 bg-white dark:bg-gray-800 shadow-md z-10 p-2 rounded-lg">
+                            <div className="flex justify-around items-center space-x-1">
+                                <ActivityLink 
+                                    label={t("全部")} 
+                                    to={`/group/${group.id}`} 
+                                    activeOnlyWhenExact={!this.props.match.params.filter}
+                                    className={`${filterLinkBaseClasses} ${!this.props.match.params.filter ? filterLinkActiveClasses : filterLinkInactiveClasses}`}
+                                />
+                                <ActivityLink 
+                                    label={t("付费")} 
+                                    to={`/group/paid/${group.id}`} 
+                                    className={`${filterLinkBaseClasses} ${this.props.match.params.filter === 'paid' ? filterLinkActiveClasses : filterLinkInactiveClasses}`}
+                                />
+                                <ActivityLink 
+                                    label={t("图片")} 
+                                    to={`/group/media/${group.id}`} 
+                                    className={`${filterLinkBaseClasses} ${this.props.match.params.filter === 'media' ? filterLinkActiveClasses : filterLinkInactiveClasses}`}
+                                />
+                            </div>
+                        </div>
+
+                        {feeds && feeds.length > 0 ? (
+                            <div>
+                                <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+                                    {feeds.map((item) => <FeedItem data={item} key={item.id} in_group={true}/>)}
+                                </ul>
+                                {loading && feeds.length > 0 && (
+                                    <div className="flex justify-center py-4"><Spinner intent={Intent.PRIMARY} size={Spinner.SIZE_SMALL} /></div>
+                                )}
+                                {since_id !== 0 && !loading && <VisibilitySensor onChange={this.handleVisibilityChange} partialVisibility={true} offset={{bottom: -200}}/>}
+                            </div>
+                        ) : (
+                             !loading && (<div className="py-10 px-4"> <NonIdealState
+                                visual="search"
+                                title={<span className="text-gray-800 dark:text-gray-200">{t("还没有内容")}</span>}
+                                description={<span className="text-gray-600 dark:text-gray-400">{t("没有符合条件的内容")}</span>}
+                            /></div>)
+                        )}
+                        {/* Initial loading for feeds, if feeds is null and not yet loaded */}
+                        {feeds === null && loading && (
+                             <div className="flex justify-center py-10"><Spinner intent={Intent.PRIMARY} size={Spinner.SIZE_LARGE}/></div>
+                        )}
+                    </Fragment>
+                )}
+            </div>
+        );
+
+        const leftColumnContent = loaded && group.id ? (
+            <div className="space-y-4"> {/* Replaces px10list for spacing */}
+                <GroupCard group={group}/> {/* Assumed refactored */}
+                
+                {/* groupactionbar equivalent */}
+                <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-4 text-center">
+                    {!is_member && (
+                        // freenotice equivalent
+                        <div className="space-y-2">
+                            <Button text={t("免费订阅")} intent={Intent.PRIMARY} onClick={()=>this.handleJoinGroup(group.id)} large={true} fill={true} />
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{t("订阅后可在首页显示更新")}</p>
+                        </div>
+                    )}
+                    {is_member && !is_admin && (
+                        // membernotice equivalent
+                        <div className="space-y-2">
+                             <BuyVipButton group={group} className="bp3-large bp3-fill" text={t("购买VIP")+" · "+web3.utils.fromWei( group.price_wei ? group.price_wei.toString() : '0' , 'ether' )+'Ξ'} renewaltext={t("VIP订户 · 续费")}/>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                {paid_feed_count > 0 ? t("VIP订户可以看到栏目中的"+ paid_feed_count +"篇付费内容") : t("VIP订户可以看到栏目中的付费内容")}
+                            </p> 
+                            <button onClick={()=>this.handleQuitGroup(group.id)} className="text-xs text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:underline focus:outline-none">
+                                {t("取消订阅")}
+                            </button>    
+                        </div>
+                    )}
+                </div>
+
+                {is_admin && (
+                    // whitebox vcenter hcenter flexcol equivalent
+                    <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-4 flex flex-col items-center space-y-2">
+                        <ButtonGroup large={false} minimal={false} vertical={false}>
+                            <Button text={group.todo_count > 0 ? `${t("投稿")} · ${group.todo_count}` : t("投稿")} icon="inbox" intent={group.todo_count > 0 ? Intent.PRIMARY : Intent.NONE} onClick={()=>this.navigateTo('/group/contribute/todo')} /> 
+                            <Button text={group.member_count > 0 ? group.member_count.toString() : undefined} icon="people" intent={Intent.NONE} onClick={()=>this.navigateTo('/group/member/'+group.id)}/>
+                            <Button icon="cog" intent={Intent.NONE} onClick={()=>this.navigateTo('/group/settings/'+group.id)}/>
+                        </ButtonGroup>
+                    </div>
+                )}
+            </div>
+        ) : (
+             <div className="p-4 flex justify-center"><Spinner /></div> // Loading state for left column
+        );
+
+        return (
+            <DocumentTitle title={pageTitle}>
+                <Column3Layout left={leftColumnContent} main={mainContent} />
+            </DocumentTitle>
+        );
     }
 }

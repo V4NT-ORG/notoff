@@ -12,18 +12,31 @@ const LMIcon = {
 
 export default class Icon extends Component
 {
-    constructor( props )
-    {
-        super( props );
-    }
+    // constructor can be omitted if not doing anything beyond super(props)
 
     render()
     {
-        const size = this.props.size ? this.props.size : 22;
-        const color = this.props.color ? this.props.color : "#000000";
+        const { size: propsSize, color: propsColor, name, colorClassName, className: propsClassName, ...restProps } = this.props;
         
-        return <svg width={size} height={size} viewBox="0 0 1024 1024" fill={color}>
-            <path d={LMIcon[this.props.name]}></path>
-        </svg>
+        const size = propsSize ? propsSize : 22;
+        // Default color if no colorClassName is provided.
+        // If colorClassName is present, 'currentColor' is preferred for SVG fill to inherit from CSS.
+        const fill = colorClassName ? 'currentColor' : (propsColor ? propsColor : "#000000");
+
+        // Combine propsClassName (any existing className passed) with colorClassName
+        const combinedClassName = `${propsClassName || ''} ${colorClassName || ''}`.trim();
+
+        return (
+            <svg 
+                width={size} 
+                height={size} 
+                viewBox="0 0 1024 1024" 
+                fill={fill}
+                className={combinedClassName || undefined} // only apply className attribute if it's not empty
+                {...restProps} // Spread any other props like onClick, style, etc.
+            >
+                <path d={LMIcon[name]}></path>
+            </svg>
+        );
     }
 }
