@@ -11,7 +11,7 @@ import { sprintf } from 'sprintf-js';
 
 import Web3 from 'web3';
 
-import Cloumn3Layout from '../component/Cloumn3Layout';
+import Column3Layout from '../component/Column3Layout';
 import UserCard from '../component/UserCard';
 
 @translate()
@@ -174,6 +174,6 @@ export default class GroupCreate extends Component
             </div>
         </div>;
         
-        return <Cloumn3Layout left={<UserCard/>} main={main} />;
+        return <Column3Layout left={<UserCard/>} main={main} />;
     }
 }

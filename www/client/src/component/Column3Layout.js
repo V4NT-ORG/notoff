@@ -14,7 +14,7 @@ import ImBox from '../component/ImBox';
 @inject("store")
 @withRouter
 @observer
-export default class Cloumn3Layout extends Component
+export default class Column3Layout extends Component
 {
     
     componentDidMount()

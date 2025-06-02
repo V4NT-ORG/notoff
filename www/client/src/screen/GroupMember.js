@@ -6,7 +6,7 @@ import { translate } from 'react-i18next';
 import VisibilitySensor from 'react-visibility-sensor';
 import { Callout , Intent, Spinner, NonIdealState } from "@blueprintjs/core";
 
-import Cloumn3Layout from '../component/Cloumn3Layout';
+import Column3Layout from '../component/Column3Layout';
 import DocumentTitle from 'react-document-title';
 import GroupCard from '../component/GroupCard';
 import MemberItem from '../component/MemberItem'; 
@@ -194,6 +194,6 @@ export default class GroupMember extends Component
         
     </div>;
         
-        return <DocumentTitle title={t('订户')+'@'+t(this.props.store.appname)}><Cloumn3Layout left={left} main={main} /></DocumentTitle>;
+        return <DocumentTitle title={t('订户')+'@'+t(this.props.store.appname)}><Column3Layout left={left} main={main} /></DocumentTitle>;
     }
 }

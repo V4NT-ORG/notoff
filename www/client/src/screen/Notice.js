@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { withRouter } from 'react-router-dom';
 import { translate } from 'react-i18next';
 
-import Cloumn3Layout from '../component/Cloumn3Layout';
+import Column3Layout from '../component/Column3Layout';
 import UserCard from '../component/UserCard';
 import DocumentTitle from 'react-document-title';
 import NoticeItem from '../component/NoticeItem'; 
@@ -100,6 +100,6 @@ export default class Notice extends Component
         { this.state.loading && <div className="hcenter"><Spinner intent={Intent.PRIMARY} small={true} /></div> }
             <VisibilitySensor onChange={(e)=>this.messageloading(e)}/>
         </div>;
-        return <DocumentTitle title={t('消息')+'@'+t(this.props.store.appname)}><Cloumn3Layout left={<UserCard/>} main={main}/></DocumentTitle>;
+        return <DocumentTitle title={t('消息')+'@'+t(this.props.store.appname)}><Column3Layout left={<UserCard/>} main={main}/></DocumentTitle>;
     }
 }

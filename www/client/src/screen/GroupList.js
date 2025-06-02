@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { withRouter } from 'react-router-dom';
 import { translate } from 'react-i18next';
 import Web3 from 'web3';
-import Cloumn3Layout from '../component/Cloumn3Layout';
+import Column3Layout from '../component/Column3Layout';
 import UserCard from '../component/UserCard';
 import { isApiOk, showApiError,toast } from '../util/Function';
 import GroupListItem from '../component/GroupListItem'; 
@@ -93,6 +93,6 @@ export default class GroupList extends Component
             {groups.map( (item) => <GroupListItem data={item} key={item.id}/> ) }
         </ul> }
         </div>;
-        return <DocumentTitle title={t("栏目Top100")+'@'+t(this.props.store.appname)}><Cloumn3Layout left={<UserCard/>} main={main} /></DocumentTitle>;
+        return <DocumentTitle title={t("栏目Top100")+'@'+t(this.props.store.appname)}><Column3Layout left={<UserCard/>} main={main} /></DocumentTitle>;
     }
 }

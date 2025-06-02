@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { withRouter } from 'react-router-dom';
 import { translate } from 'react-i18next';
 
-import Cloumn3Layout from '../component/Cloumn3Layout';
+import Column3Layout from '../component/Column3Layout';
 import DocumentTitle from 'react-document-title';
 import { toast, isApiOk, showApiError } from '../util/Function';
 import FeedItem from '../component/FeedItem';
@@ -48,6 +48,6 @@ export default class FeedDetail extends Component
             <BackButton/>
             
             <ul className="feedlist"><FeedItem data={item} key={item.id} show_comment={true}/></ul></div>:'';
-        return <DocumentTitle title={this.props.t(this.props.store.appname)}><Cloumn3Layout  main={main} /></DocumentTitle>;
+        return <DocumentTitle title={this.props.t(this.props.store.appname)}><Column3Layout  main={main} /></DocumentTitle>;
     }
 }
