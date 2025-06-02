@@ -8,7 +8,7 @@ function _t( $string )
 {
     if( !isset( $GLOBALS['WORDS'] ) )
     {
-        $GLOBALS['WORDS'] = json_decode( file_get_contents( '/Users/Easy/Code/gitcode/lianmiweb/public/locales/en/translations.json' )  , true );
+        $GLOBALS['WORDS'] = json_decode( file_get_contents( __DIR__ . '/../../../client/public/locales/en/translations.json' )  , true );
     }
 
     return isset( $GLOBALS['WORDS'][$string] ) ? $GLOBALS['WORDS'][$string] : $string;
@@ -21,26 +21,26 @@ class LoginCest
     public function _before(AcceptanceTester $I)
     {
         // 清理数据库
-        $pdo = new PDO(c('database_dev','dsn'),c('database_dev','user'),c('database_dev','password'));
-        $db =  new \Lazyphp\Core\Database($pdo);
+        // $pdo = new PDO(c('database_dev','dsn'),c('database_dev','user'),c('database_dev','password'));
+        // $db =  new \Lazyphp\Core\Database($pdo);
         
-        if($tables = $db->getData("SHOW TABLES")->toArray())
-            foreach( $tables as $table )
-               if($tablenames = array_values($table))
-                    foreach( $tablenames as $tablename )
-                    {
-                        $db->runSql("DROP TABLES `{$tablename}`") ;
-                    }
+        // if($tables = $db->getData("SHOW TABLES")->toArray())
+        //     foreach( $tables as $table )
+        //        if($tablenames = array_values($table))
+        //             foreach( $tablenames as $tablename )
+        //             {
+        //                 $db->runSql("DROP TABLES `{$tablename}`") ;
+        //             }
                         
-        // add fresh data
-        try
-        {
-            load_data_from_file( AROOT . 'sql' . DS . 'lianmi.sql' , $pdo );    
-        }
-        catch( Exception $e )
-        {
-            echo $e->getMessage();
-        }            
+        // // add fresh data
+        // try
+        // {
+        //     load_data_from_file( AROOT . 'sql' . DS . 'lianmi.sql' , $pdo );    
+        // }
+        // catch( Exception $e )
+        // {
+        //     echo $e->getMessage();
+        // }            
     }
 
 
