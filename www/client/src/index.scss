@@ -1,9 +1,37 @@
  /* 全局CSS */
 @import "~@blueprintjs/core/lib/css/blueprint.css";
-@import "~@blueprintjs/core/lib/scss/variables";
+@import "~@blueprintjs/core/lib/scss/variables"; // Blueprint variables
 @import "~@blueprintjs/icons/lib/css/blueprint-icons.css";
 
-$pt-intent-primary:$blue5;
+// Define light mode default colors as CSS variables
+:root {
+  --app-bg-color: #e6ecf0;
+  --app-text-color: #{$pt-text-color}; // Use Blueprint's text color
+  --app-card-bg-color: white;
+  --app-link-color: #{$blue3};
+  --app-link-hover-color: #{$blue5};
+  --app-border-color: #{$light-gray3};
+  --app-secondary-text-color: #{$gray3};
+  --app-header-bg-color: rgba(255, 255, 255, 0.99);
+  --app-feed-item-hover-bg: rgba(255, 255, 255, 0.92);
+  --app-button-primary-bg: #{$blue5}; // $pt-intent-primary
+}
+
+// Define dark mode colors using CSS variables
+.app-dark-mode {
+  --app-bg-color: #{$dark-gray2}; // Or another dark color like #22272B (dark-gray1) or #10161A
+  --app-text-color: #{$light-gray5}; // Blueprint's light text color for dark themes
+  --app-card-bg-color: #{$dark-gray4}; // A dark card background
+  --app-link-color: #{$blue2}; // Lighter blue for dark mode
+  --app-link-hover-color: #{$blue1};
+  --app-border-color: #{$gray2}; // Darker border
+  --app-secondary-text-color: #{$light-gray1};
+  --app-header-bg-color: rgba(40, 48, 54, 0.95); // Darker header, e.g., dark-gray3 with opacity
+  --app-feed-item-hover-bg: #{$dark-gray5}; // Slightly lighter than card bg for hover
+  --app-button-primary-bg: #{$blue3}; // Keep primary buttons noticeable
+}
+
+$pt-intent-primary: var(--app-button-primary-bg); // Use CSS var for Blueprint primary intent
 
 $pt-font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,"Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",SimSun, sans-serif;
 
@@ -40,15 +68,17 @@ $lm-font5:24px;
   margin-top:50px;
 }
 
-.hasnewfeed
+.hasnewfeed // Example of a component needing color update
 {
   display: flex;
   justify-content: center;
-  border:1px solid $gray5;
+  border:1px solid var(--app-border-color);
   padding:10px;
   cursor: pointer;
-  background-color: rgba( 255, 255, 255, .6 );
-  color:$blue3;
+  background-color: var(--app-card-bg-color);
+  color: var(--app-link-color);
+  // Consider opacity for background if it was semi-transparent before:
+  // background-color: rgba(var(--app-card-bg-color-rgb, 255, 255, 255), .6); // Need RGB vars for this
 }
 
 .ttop
@@ -92,9 +122,15 @@ body
   top:0px;
   left:0px;
   right:0px;
-  box-shadow:0 1px 2px rgba(0,0,0,.1);
+  background-color: var(--app-header-bg-color);
+  box-shadow:0 1px 2px rgba(0,0,0,.1); // Shadow might need adjustment for dark mode
   z-index:9;
 }
+
+.bp3-dark .header { // Specific overrides for blueprint dark mode if needed for shadow
+  box-shadow:0 1px 2px rgba(0,0,0,.3);
+}
+
 
 .header > .middle
 {
@@ -117,7 +153,7 @@ body
 .logo
 {
   font-size:$lm-font5;
-  color:$blue3;
+  color: var(--app-link-color);
 }
 
 .header .logo
@@ -158,38 +194,35 @@ body
 
 .header .links ul > li a
 {
-  color:$gray5;
+  color: var(--app-secondary-text-color);
   font-size: $lm-font3;
   margin-right: 20px;
 }
 
 .header .links ul > li a:hover
 {
-  /* color:$blue3;*/
   text-decoration: none; 
-  border-bottom: 3px solid $gray5;
+  border-bottom: 3px solid var(--app-secondary-text-color);
   padding-bottom:10px;
 }
 
 .header .links ul > li > .active a
 {
-  border-bottom: 3px solid $blue3;
+  border-bottom: 3px solid var(--app-link-color);
   padding-bottom:10px;
-  color:$blue3;
+  color: var(--app-link-color);
 }
 
 .header .links ul > li > .active a:hover
 {
-  color:$blue2;
+  color: var(--app-link-hover-color);
 }
 
 .header  .userbox
 {
-  /* background-color:bisque; */
   display: flex;
   justify-content:flex-end;
   align-items:center;
-  // min-width:250px;
 }
 
 .header .userbox .avatar img
@@ -202,7 +235,7 @@ body
 .header .userbox .text
 {
   font-size: $lm-font3;
-  color:$gray5;
+  color: var(--app-secondary-text-color);
   margin-left:10px;
   display: flex;
   justify-content:flex-end;
@@ -212,33 +245,39 @@ body
 
 .header .userbox .text .pt-icon
 {
-  color:$gray5;
+  color: var(--app-secondary-text-color);
   margin-left:3px;
 }
 
 .header .userbox .text:hover .pt-icon
 {
-  color:$blue2;
+  color: var(--app-link-hover-color);
 }
 
-.header .userbox .lang
+.header .userbox .lang // Assuming this is a language switcher button
 {
   font-size: $lm-font1;
-  background-color:$gray5;
-  color:white;
+  background-color: var(--app-secondary-text-color); // Or a button-like color
+  color: var(--app-bg-color); // Text color that contrasts with its background
   margin-left:10px;
   padding:3px;
   border-radius: 3px;
 }
 
+.app-dark-mode .header .userbox .lang {
+  background-color: var(--app-secondary-text-color);
+  color: var(--app-text-color); // Ensure contrast
+}
+
+
 .header .userbox .lang:hover
 {
-  background-color:$blue2;
+  background-color: var(--app-link-hover-color);
 }
 
 .header .userbox .text:hover
 {
-  color:$blue2;
+  color: var(--app-link-hover-color);
 }
 
 .header > *
@@ -256,9 +295,9 @@ body
 {
   // height:2000px;
   padding-top:45px;
-  /* background-color: white; */
   display: flex;
   flex-direction: row;
+  // background-color: var(--app-bg-color); // Body background will handle this
 }
 
 .contentbox > *
@@ -269,7 +308,6 @@ body
 
 .contentbox > .leftside
 {
-  /* background-color: antiquewhite; */
   flex:3;
 }
 
@@ -278,9 +316,10 @@ body
   margin-bottom:10px;
 }
 
-.usercard
+.usercard // Example: Card-like component
 {
-  background-color: white;
+  background-color: var(--app-card-bg-color);
+  color: var(--app-text-color);
   display: flex;
   flex-direction: column;
   min-height: 200px;
@@ -295,17 +334,14 @@ body
   min-height:120px;
 }
 
-.usercard > .info
+.usercard > .info // Info section within the card
 {
-  background-color: white;
+  background-color: var(--app-card-bg-color); // Ensure consistency if it's a separate element
   flex:1;
 }
 
 .usercard .cardavatar
 {
-  
-  
-
   > img
   {
     max-width:98px;
@@ -331,31 +367,17 @@ body
     > .title
     {
       font-size: 20px;
-      color:$blue3;
+      color: var(--app-link-color);
     }
 
     > .desp
     {
-      color:$gray5;
+      color: var(--app-secondary-text-color);
       margin-top:3px;
       margin-bottom: 20px;
     }
   }
 }
-
-// .usercard  .avatar
-// {
-//   width:98px;
-//   border-radius: 100%;
-//   border:5px solid rgba( 255, 255, 255, .8 );
-//   display: flex;
-//   align-items: flex-end;
-//   padding-left:10px;
-//   position: relative;
-//   top:-20px;
-// }
-
-
 
 .usercard  .count
 {
@@ -363,18 +385,18 @@ body
   flex-direction: row;
   position: relative;
   top:-10px;
-  /* border-top:1px dotted $gray5; */
+  border-top:1px dotted var(--app-border-color);
 }
 
 .usercard  .count > *  h1
 {
   font-size: $lm-font5;
-  color:$gray5;
+  color: var(--app-secondary-text-color);
 }
 
 .usercard  .count > * span
 {
-  color:$gray3;
+  color: var(--app-text-color); // Was $gray3, make it a bit lighter
   font-size: $lm-font2;
 }
 
@@ -391,32 +413,54 @@ body
 
 .contentbox > .main
 {
-  /* background-color:coral; */
   flex:6;
 }
 
 .contentbox > .rightside
 {
-  /* background-color: antiquewhite; */
   flex:3;
 }
 
-.publishbox 
+.publishbox // Example: Card-like component
 {
-  background-color: white;
+  background-color: var(--app-card-bg-color);
+  color: var(--app-text-color);
   padding:20px;
   min-height:100px;
   border-radius: 5px;
 
   .groupselect__control:hover
   {
-    border-color: $blue3;
+    border-color: var(--app-link-color);
   }
-  .groupselect__control-is-focused
+  .groupselect__control--is-focused // Note: Blueprint might use different class for dark theme focus
   {
-    border-color: $blue3;
-    box-shadow: 0 0 0 1px $blue3;
+    border-color: var(--app-link-color);
+    box-shadow: 0 0 0 1px var(--app-link-color);
   }
+  .app-dark-mode .groupselect__control--is-focused { // Ensure focus rings are visible in dark mode
+      box-shadow: 0 0 0 1px var(--app-link-color), 0 0 0 3px rgba(var(--app-link-color-rgb, 72, 162, 247), 0.3); // Assuming blue3 for link
+  }
+  .app-dark-mode .groupselect__input, .app-dark-mode .groupselect__single-value, .app-dark-mode .groupselect__placeholder {
+    color: var(--app-text-color) !important; // Important needed if Blueprint styles are too specific
+  }
+  .app-dark-mode .groupselect__menu {
+    background-color: var(--app-card-bg-color); // Or a slightly different dark bg for dropdowns
+    // border: 1px solid var(--app-border-color); // if needed
+  }
+  .app-dark-mode .groupselect__option {
+    background-color: var(--app-card-bg-color);
+    color: var(--app-text-color);
+  }
+  .app-dark-mode .groupselect__option--is-focused {
+    background-color: var(--app-link-hover-color); // Or a dark hover color
+    color: white; // Text color for focused option
+  }
+   .app-dark-mode .groupselect__option--is-selected {
+    background-color: var(--app-link-color);
+    color: white;
+  }
+
 
   .groupselect__menu
   {
@@ -441,23 +485,27 @@ body
       {
         max-width:80px;
         max-height:80px;
-        border:1px solid $light-gray3;
+        border:1px solid var(--app-border-color);
         margin:3px;
         border-radius: 5px;
       }
     }
-  }  
+  }
 
 }
 
-.publishbox textarea
+.publishbox textarea // Assuming this is a Blueprint TextArea or needs custom styling
 {
   width:100%;
   height:100px;
-  border: 1px solid $blue3;
+  border: 1px solid var(--app-link-color); // Use link color for active border
+  background-color: var(--app-card-bg-color); // Match card background
+  color: var(--app-text-color);
   outline-width: 0px!important;
-} 
-
+}
+.app-dark-mode .publishbox textarea::placeholder {
+  color: var(--app-secondary-text-color);
+}
 
 
 .publishbox .action
@@ -471,7 +519,9 @@ body
 {
   display: flex;
   align-items: center;
-  // background-color: red;
+  .pt-icon { // Ensure icons in this bar use text color
+    color: var(--app-text-color);
+  }
 }
 
 .publishbox .action > .icons
@@ -486,8 +536,6 @@ body
     flex-direction: row;
     justify-items: center;
     align-items: center;
-    // width:120px;
-    // background-color: green;
   }
 
   .react-file-reader
@@ -499,10 +547,10 @@ body
 .publishbox .action > .type
 {
   padding-top:10px;
+  .bp3-control label { // Ensure switch label text color
+    color: var(--app-text-color);
+  }
 }
-
-
-
 
 .publishbox .action > .button
 {
@@ -514,39 +562,39 @@ body
 
 .publishbox .action .togroup
 {
-  color:$gray5;
+  color: var(--app-secondary-text-color);
   font-size: $lm-font2;
   margin-right:10px;
 }
 
 .publishbox .action .togroup a
 {
-  color:$gray5;
+  color: var(--app-secondary-text-color);
   display: flex;
   align-items: center;
 }
 
-.copyright
+.copyright // Example: Card-like component
 {
-  background-color: white;
+  background-color: var(--app-card-bg-color);
   min-width: 40px;
   padding:10px;
-  color:$gray5;
-  border-top: 1px solid $light-gray5
+  color: var(--app-secondary-text-color);
+  border-top: 1px solid var(--app-border-color);
 }
 
-.promogroup
+.promogroup // Example: Card-like component
 {
-  background-color: white;
+  background-color: var(--app-card-bg-color);
   min-width: 40px;
-  color:$gray3;
+  color: var(--app-text-color);
   padding:10px;
 }
 
 .promogroup h1
 {
   font-size: $lm-font4;
-  color:$gray5;
+  color: var(--app-text-color); // Was $gray5
   font-weight: 300;
   line-height: 30px;
   display: flex;
@@ -556,6 +604,7 @@ body
 .promogroup h1 .pt-icon
 {
   margin-right: 5px;
+  color: var(--app-text-color); // Ensure icon matches text
 }
 
 .promogroup ul
@@ -581,21 +630,22 @@ body
 
 .promogroup ul > li > img + * a:not(:hover)
 {
-  color:$gray5;
+  color: var(--app-secondary-text-color);
 }
 
 .promogroup ul > li > img + * a:hover
 {
-  color:$blue3;
+  color: var(--app-link-color);
 }
 
-.newfeed
+.newfeed // This was already updated above, check for consistency
 {
   margin-top: 10px;
-  border:1px solid $gray5;
+  border:1px solid var(--app-border-color);
   padding:10px;
   border-radius: 5px;
-  color:$gray1;
+  color: var(--app-link-color); // Was $gray1 -> link color
+  background-color: var(--app-card-bg-color);
   text-align: center;
 }
 
@@ -603,39 +653,33 @@ body
 {
   border-radius: 5px;
   padding:0px;
+  // background-color: var(--app-card-bg-color); // Let li handle its own background
 }
 
-.feedlist > li
+.feedlist > li // Feed item itself
 {
   display: flex;
   flex-direction: row;
-  background-color: white;
+  background-color: var(--app-card-bg-color);
+  color: var(--app-text-color);
   padding:20px;
-  border-bottom:1px solid $light-gray3;
-  
+  border-bottom:1px solid var(--app-border-color);
 }
 
-.feedlist.top > li
+.feedlist.top > li // Top feed item style
 {
-  border-left:3px solid $blue2;
+  border-left:3px solid var(--app-link-color); // Was $blue2
 }
 
-// .feedlist > li:first-child
-// {
-//   //border-top-left-radius: 5px;
-//   //border-top-right-radius: 5px;
-// }
 
 .feedlist > li:last-child
 {
-  //border-bottom-left-radius: 5px;
-  //border-bottom-right-radius: 5px;
   border-bottom-width:0px;
 }
 
 .feedlist > li:hover
 {
-  background-color: rgba( 255,255,255,.92 );
+  background-color: var(--app-feed-item-hover-bg); // Use variable
 }
 
 .feedlist > li .avatarbox
@@ -658,40 +702,40 @@ body
 .feedlist > li .feedbox .userbox .name
 {
   font-size:$lm-font3;
-  color:$gray3;
+  color: var(--app-text-color); // Was $gray3
 }
 
 .feedlist > li .feedbox .userbox .name > span
 {
   font-size:$lm-font2;
-  color: $gray5;
+  color: var(--app-secondary-text-color); // Was $gray5
   margin-left:5px;
 }
 
 .feedlist > li .feedbox .time
 {
-  color:$gray5;
+  color: var(--app-secondary-text-color); // Was $gray5
   margin-top:3px;
   margin-bottom:5px;
 }
 
 .feedlist > li .feedbox .time a
 {
-  color:$blue3;
+  color: var(--app-link-color); // Was $blue3
 }
 
 .feedlist > li .feedbox .time a:hover
 {
-  color:$blue5;
+  color: var(--app-link-hover-color); // Was $blue5
 }
 
-.feedbox .feedcontent
+.feedbox .feedcontent // Text within feed
 {
   font-size: $lm-font2;
   line-height: 1.5;
   overflow-wrap: break-word;
   word-break: break-word;
-  
+  color: var(--app-text-color);
 }
 
 .feedbox .feedcontent .photos
@@ -700,7 +744,6 @@ body
   align-content: center;
   display: flex;
   flex-wrap: wrap;
-
 }
 
 .feedbox .feedcontent .photos > li
@@ -712,7 +755,7 @@ body
 {
   width:100px;
   height:100px;
-  border:1px solid $light-gray3;
+  border:1px solid var(--app-border-color); // Was $light-gray3
   margin:3px;
   border-radius: 5px;
 }
@@ -727,27 +770,29 @@ body
   font-size:$lm-font2;
 }
 
-.feedbox .feedcontent .files > li
+.feedbox .feedcontent .files > li // File attachment item
 {
   display: flex;
   align-content: center;
-  background-color:$light-gray5; 
+  background-color: var(--app-bg-color); // Was $light-gray5, use app bg or slightly different dark shade
   border-radius: 5px;
   padding:2px;
-  // padding-left:10px;
-  // padding-right:10px;
   margin-right:5px;
   margin-bottom:5px;
 }
+.app-dark-mode .feedbox .feedcontent .files > li {
+  background-color: #{$dark-gray3}; // Darker shade for file items in dark mode
+}
+
 
 .feedbox .feedcontent .files > li:hover
 {
-  background-color:$light-gray3;
+  background-color: var(--app-border-color); // Was $light-gray3
 }
 
 .feedbox .feedcontent .files > li a
 {
-  color:$gray3;
+  color: var(--app-text-color); // Was $gray3
   display: flex;
   align-content: center;
 }
@@ -756,6 +801,7 @@ body
 {
   margin-right:3px;
   margin-top:4px;
+  color: var(--app-text-color); // Ensure icon color
 }
 
 .feedbox .actionbar
@@ -765,18 +811,25 @@ body
   margin-top: 10px;
 }
 
-.feedbox .actionbar > *
+.feedbox .actionbar > * // Action items like comment, upvote
 {
   flex:1;
   display: flex;
   align-items:center;
   cursor: pointer;
+  .lm-icon { // Custom icons
+    color: var(--app-secondary-text-color) !important; // Target LMIcon color
+  }
+  .pt-icon { // Blueprint icons
+     color: var(--app-secondary-text-color) !important;
+  }
 }
 
-.feedbox .actionbar > * > span
+
+.feedbox .actionbar > * > span // Count text next to action icons
 {
   margin-left:5px;
-  color:$gray5;
+  color: var(--app-secondary-text-color); // Was $gray5
 }
 
 .feedbox 
@@ -784,7 +837,7 @@ body
   position: relative;
 }
 
-.feedbox .commentbox
+.feedbox .commentbox // Container for comments section
 {
   margin-top:20px;
   > *:not(:first-child)
@@ -792,19 +845,19 @@ body
     margin-top:10px;
   }
 
-  .morelink
+  .morelink // "Load more" link for comments
   {
     cursor: pointer;
-    color:$gray5;
+    color: var(--app-secondary-text-color); // Was $gray5
 
     &:hover
     {
-      color:$gray3;
+      color: var(--app-text-color); // Was $gray3
     }
   }
 }
 
-.feedbox .commentlist
+.feedbox .commentlist // List of comments
 {
   padding:0px;
   >li
@@ -815,30 +868,30 @@ body
   }
   > li:not(:last-child)
   {
-    border-bottom: 1px solid $light-gray5;
+    border-bottom: 1px solid var(--app-border-color); // Was $light-gray5
   }
 
-  .commentitem
+  .commentitem // Individual comment item
   {
     display: flex;
     align-items: baseline;
-    color:$gray3;
+    color: var(--app-text-color); // Was $gray3
     flex-direction: column;
     line-height: 1.8;
     padding-right:5px;
 
     &:hover
     {
-      color:$gray1;
+      color: var(--app-link-hover-color); // Was $gray1
       .delete
       {
         display: block;
       }
     }
-    .timeline
+    .timeline // Timestamp of comment
     {
       font-size: $lm-font1;
-      color:$light-gray1;
+      color: var(--app-secondary-text-color); // Was $light-gray1
     }
 
     .content
@@ -857,28 +910,33 @@ body
           border-radius: 3px;
         }
     }
-
-    
     }
 
-    .delete
+    .delete // Delete icon for comment
     {
       position: absolute;
       right:-10px;
       top:5px;
       display: none;
       cursor: pointer;
-      
+      .pt-icon { // Ensure delete icon color
+        color: var(--app-secondary-text-color);
+      }
+      &:hover .pt-icon {
+        color: var(--app-link-color);
+      }
     }
-
   }
 }
 
-.feedbox .paid
+.feedbox .paid // "Paid content" indicator
 {
   position: absolute;
   right:0px;
   top:0px;
+  .pt-icon {
+    color: var(--app-secondary-text-color) !important; // Was LIGHT_GRAY3
+  }
 }
 
 .feedbox:hover .paid
@@ -886,13 +944,13 @@ body
   display: none;
 }
 
-.feedbox .hovermenu
+.feedbox .hovermenu // Hover menu (ellipsis) for feed item actions
 {
   position: absolute;
   right:0px;
   top:0px;
   display: none;
-  color:$gray5;
+  color: var(--app-secondary-text-color); // Was $gray5
   cursor: pointer;
 }
 
@@ -901,12 +959,11 @@ body
   display: block;
 }
 
-.feedfilter
+.feedfilter // Filter bar (e.g., on Home or GroupDetail)
 {
-  background-color: white;
+  background-color: var(--app-card-bg-color); // Was white
   display: flex;
   flex-direction: row;
-  // border-radius: 3px;
   padding-left:5px;
   padding-right:5px;
 }
@@ -916,24 +973,23 @@ body
   padding:10px;
 }
 
-.feedfilter > * .active a
+.feedfilter > * .active a // Active link in filter bar
 {
-  border-bottom: 3px solid $blue3;
+  border-bottom: 3px solid var(--app-link-color); // Was $blue3
   padding-bottom:8px;
-  color:$blue3;
+  color: var(--app-link-color); // Was $blue3
 }
 
-.feedfilter > * :not(.active) a
+.feedfilter > * :not(.active) a // Inactive link in filter bar
 {
-  color:$gray3;
+  color: var(--app-secondary-text-color); // Was $gray3
 }
 
 .feedfilter > * :not(.active) a:hover
 {
-  border-bottom: 3px solid $gray3;
+  border-bottom: 3px solid var(--app-secondary-text-color); // Was $gray3
   padding-bottom:8px;
 }
-
 
 
 .lmlink .pt-icon
@@ -947,37 +1003,41 @@ body
   clear:none; 
 }
 
-.gray5
+.gray5 // This class is used for specific text coloring, should be reviewed if it needs dark mode variant
 {
-  color:$gray5;
+  // color: $gray5; // Original, might be too dark for dark mode
+  color: var(--app-secondary-text-color); // General secondary text color
+}
+.app-dark-mode .gray5 {
+  color: $light-gray1; // A lighter gray for dark mode if $gray5 was specifically for a darker shade
 }
 
-.middle
+
+.middle // Main content container
 {
   max-width:1200px;
   margin-left:auto;
   margin-right:auto;
-  /* background-color: bisque; */
 }
 
 
 
 /////////////// login /////////
 
-.loginhero
+.loginhero // Login page background
 {
   display: flex;
   flex-direction: column;
   align-items: center;
-  // justify-content: center;
   flex:1;
   min-height: 100vh;
-  background-color: $gray2;
+  background-color: $dark-gray2; // Original was $gray2, using a dark theme color now
+  // For dark mode, this might already be dark enough. If not, specific override:
+  // .app-dark-mode & { background-color: $dark-gray1; }
 
   .logobox
   {
     text-align: center;
-    //max-height: 200px;
     margin-top: 30px;
 
     .title
@@ -989,21 +1049,22 @@ body
   }
 }
 
-.loginhero .title
+.loginhero .title // Title text on login page
 {
-  color:white;
+  color: $light-gray5; // Was white
   margin-bottom:20px;
   font-size: $lm-font3;
 }
 
-.fronttab
+.fronttab // Login/Register form container
 {
-  background-color: white;
+  background-color: var(--app-card-bg-color); // Was white
   padding:20PX;
   border-radius: 5px;
   min-width:500px;
   margin-top:20px;
   margin-bottom:50px;
+  // Text color inside will be handled by Blueprint's .bp3-dark or general var(--app-text-color)
 }
 
 .loginhero .actionbar
@@ -1022,26 +1083,30 @@ body
   flex-direction: row-reverse;
 }
 
-.require
+.require // "Required" text next to form labels
 {
-  color:$gray3;
+  color: var(--app-secondary-text-color); // Was $gray3
   font-size: $lm-font1;
   margin-left:5px;
 }
 
-.langicon
+.langicon // Language icon on login page
 {
-  color:white;
+  color: var(--app-bg-color); // Was white, text should contrast with its new bg
   font-size: $lm-font1;
-  background-color: $gray5;
+  background-color: var(--app-secondary-text-color); // Was $gray5
   border-radius: 3px;
   padding:5px;
   cursor: pointer;
 }
+.app-dark-mode .langicon {
+  color: var(--app-text-color);
+  background-color: $dark-gray1; // Darker background for the icon itself
+}
 
 .langicon:hover
 {
-  background-color: $blue2;
+  background-color: var(--app-link-hover-color); // Was $blue2
 }
 
 .left5
@@ -1066,58 +1131,61 @@ body
 }
 
 
-
 .front
 {
   margin-left:10px;
   
-  span
+  span // Not sure what this is, assuming it's a badge or highlight
   {
-    background-color: $blue3;
+    background-color: var(--app-link-color); // Was $blue3
+    color: white; // Ensure text on this bg is light
   }
 }
+.app-dark-mode .front span {
+  color: $dark-gray1; // Dark text on lighter blue for dark mode
+}
 
-.groupnotice
+
+.groupnotice // Notice box for groups
 {
-  background-color:white;
+  background-color: var(--app-card-bg-color); // Was white
   padding:20px;
   border-radius: 3px;
   text-align:center;
   font-size:$lm-font3;
-  color:$gray3;
+  color: var(--app-text-color); // Was $gray3
 }
 
-%white-block
+%white-block // SCSS placeholder, needs to be updated if used
 {
-  background-color:white;
-  // border-radius: 3px;
+  background-color: var(--app-card-bg-color); // Was white
+  color: var(--app-text-color);
 }
 
 
-.groupform
+.groupform // Form for group creation/editing
 {
-  @extend %white-block;
+  @extend %white-block; // Will inherit dark mode changes from white-block
   padding:20px;
 }
 
-h1.lianmi
+h1.lianmi // Specific h1 style
 {
   font-size: $lm-font4;
   font-weight: normal; 
   line-height: $lm-font4;
-  color:$blue3;
+  color: var(--app-link-color); // Was $blue3
 }
 
-.groupnotice > span
+.groupnotice > span // Span within group notice
 {
-  color:$light-gray3;
+  color: var(--app-secondary-text-color); // Was $light-gray3
 }
 
-.editbox
+.editbox // Container for avatar editor
 {
   display: flex;
   flex-direction: row;
-
   align-items: flex-end;
 
   .theavatar
@@ -1136,16 +1204,16 @@ h1.lianmi
   cursor: pointer;
 }
 
-.dropzone
+.dropzone // Dropzone component style
 {
   .covertext
   {
-    color: $blue3;
+    color: var(--app-link-color); // Was $blue3
     cursor: pointer;
   }
 }
 
-.groupdetail
+.groupdetail // Group detail display
 {
   img
   {
@@ -1157,6 +1225,7 @@ h1.lianmi
   .name
   {
     font-size: $lm-font3;
+    color: var(--app-text-color); // Ensure text color
   }
 }
 
@@ -1167,13 +1236,14 @@ h1.lianmi
     margin-right: 10px;
   }
 
-  .checking
+  .checking // "Checking" state display
   {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     padding:40px;
+    color: var(--app-text-color); // Ensure text color
 
     > * 
     {
@@ -1181,71 +1251,77 @@ h1.lianmi
     }
   }
 }
-.pricepostfix
+.pricepostfix // Text next to price input
 {
   padding-right:10px;
-  color:$gray3;
+  color: var(--app-secondary-text-color); // Was $gray3
   margin-top:3px;
   position: relative;
   top: 12px;
 }
 
 
-
-.groupcard
+.groupcard // Card for displaying group info
 {
+  color: var(--app-text-color); // Set base text color for the card
   .groupheader
   {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: url('/image/background.jpg');
+    // background: url('/image/background.jpg'); // Background image might need adjustment for dark mode visibility
+    // Consider adding a dark overlay for text readability if image is light:
+    // position: relative;
+    // &::before {
+    //   content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    //   background-color: rgba(0,0,0,0.3); // Dark overlay
+    //   .app-dark-mode & { background-color: rgba(0,0,0,0.5); } // Darker overlay for dark mode
+    // }
     background-position: center left;
     background-size: 100%;
     height:180px;
 
-    h1
+    h1 // Title on group header
     {
-      color:white;
+      color: white; // Keep white if on dark background image, ensure readability
       font-size: $lm-font3;
+      // text-shadow: 1px 1px 2px black; // Add shadow if needed for readability on image
     }
   }
 
-  .cover
+  .cover // Group cover image
   {
     border-radius: 100%;
     max-width: 80px;
     max-height: 80px;
-    border:2px solid rgba( 255, 255, 255, .8 );
+    border:2px solid rgba(var(--app-card-bg-color-rgb, 255, 255, 255), .8 ); // Border based on card bg
+  }
+  .app-dark-mode .groupcard .cover {
+     border:2px solid rgba(var(--app-card-bg-color-rgb, 57, 65, 70), .8 ); // Darker border
   }
 
-  
-
-  .groupnav
+  .groupnav // Navigation/info bar within group card
   {
-    background:white;
+    background: var(--app-card-bg-color); // Was white
     padding:10px;
     display:flex;
     flex-direction: row;
     align-items: center;
     
-    
     .infos
     {
       flex:1;
-
       display: flex;
       flex-direction: column;
-      
       font-size:$lm-font2;
-      color:$gray5;
+      color: var(--app-secondary-text-color); // Was $gray5
 
       align-items: center;
       justify-content: center;
-      span
+      span // Count numbers
       {
-        color:$gray3;
+        color: var(--app-text-color); // Was $gray3
         margin-left:5px;
         font-size: $lm-font3;
       }
@@ -1255,19 +1331,16 @@ h1.lianmi
     {
       margin-left:10px;
     }
-    
-
-    
   }
 }
 
-.groupdetailbox
+.groupdetailbox // Box for group details
 {
-  .notmember
+  .notmember // "Not a member" message box
   {
-    background: white;
+    background: var(--app-card-bg-color); // Was white
     padding:20px;
-
+    color: var(--app-text-color); // Ensure text color
     .join
     {
       margin-top:20px;
@@ -1275,15 +1348,16 @@ h1.lianmi
   }
 }
 
-.groupactionbar
+.groupactionbar // Action bar for group
 {
   &:empty
   {
     display: none;
   }
   display: flex;
-  background: white;
+  background: var(--app-card-bg-color); // Was white
   padding:20px;
+  color: var(--app-text-color); // Ensure text color
 
   .freenotice,.membernotice
   {
@@ -1295,29 +1369,29 @@ h1.lianmi
       align-items: center;
     }
     
-    .detail
+    .detail // Detail text
     {
       font-size: $lm-font2;
-      color:$gray3;
+      color: var(--app-secondary-text-color); // Was $gray3
     }
 
-    .quit > span
+    .quit > span // "Quit group" link
     {
-      color:$light-gray1;
+      color: var(--app-secondary-text-color); // Was $light-gray1
       cursor: pointer;
       
       &:hover
       {
-        color:$gray5;
+        color: var(--app-text-color); // Was $gray5
       }
     }
   }
 }
 
-.grouplistbar
+.grouplistbar // Bar for group list
 {
   margin-top:10px;
-  color:$gray3;
+  color: var(--app-secondary-text-color); // Was $gray3
   ul
   {
     padding:0px;
@@ -1335,25 +1409,28 @@ h1.lianmi
       {
         width:150px;
         text-overflow: ellipsis;
+        color: var(--app-text-color); // Ensure title is readable
       }
     }
-
   }
 }
 
-.submitbar
+.submitbar // Submit bar, likely for forms
 {
   min-height: 100px;
   .submitbox
   {
     position: fixed;
+    // background-color: var(--app-card-bg-color); // If it needs a background
+    // border-top: 1px solid var(--app-border-color); // If it needs a top border
   }
 }
 
-.contributefilter
+.contributefilter // Filter for contributions
 {
   display: flex;
   flex-direction: row;
+  color: var(--app-text-color);
   
   .button
   {
@@ -1361,28 +1438,35 @@ h1.lianmi
     right:0px;
     top:-2px;
   }
-  
 }
 
-.sticky
+.sticky // Sticky header/filter bar
 {
   position: sticky;
   top:45px;
-  background-color: white;
+  background-color: var(--app-card-bg-color); // Was white
   z-index:$pt-z-index-overlay;
-  box-shadow: 1px 1px 1px  1px rgba( 0, 0, 0, 0.1);
+  box-shadow: 1px 1px 1px  1px rgba(0,0,0,0.1); // Shadow might need adjustment
+}
+.app-dark-mode .sticky {
+  box-shadow: 1px 1px 2px 1px rgba(0,0,0,0.3); // Darker shadow for dark mode
 }
 
-.explain
+
+.explain // Explanatory text
 {
-  color:$gray5;
+  color: var(--app-secondary-text-color); // Was $gray5
   font-size: $lm-font1;
 }
 
-*:focus
+*:focus // Global focus - Blueprint handles this well, but if overridden:
 {
-  outline: 0px;
+  outline: 0px; // Keep this, but ensure focus indicators are visible via box-shadow or other means
 }
+// .app-dark-mode *:focus { // Example: ensure dark mode focus is visible if default is not enough
+//   box-shadow: 0 0 0 1px var(--app-link-color), 0 0 0 3px rgba(var(--app-link-color-rgb, 72, 162, 247), 0.3);
+// }
+
 
 .flexcol
 {
@@ -1395,10 +1479,11 @@ h1.lianmi
   justify-content: center;
 }
 
-.whitebox
+.whitebox // Generic white box, now themeable
 {
-  background-color: white;
+  background-color: var(--app-card-bg-color); // Was white
   padding:20px;
+  color: var(--app-text-color);
 }
 
 .hiddenitem
@@ -1411,35 +1496,41 @@ h1.lianmi
   padding:40px;
 }
 
-.editorinoverlay
+.editorinoverlay // Overlay for editor
 {
   min-height: 100vh;
   display: flex;
   width:100%;
   justify-content: center;
   align-items: center;
-  .editor
+  // background-color: rgba(0,0,0,0.5); // If overlay needs a backdrop
+  // .app-dark-mode & { background-color: rgba(0,0,0,0.7); }
+
+  .editor // The editor component itself
   {
     width: 600px;
-    
+    background-color: var(--app-card-bg-color); // Ensure editor bg matches theme
+    padding: 20px; // Example padding
+    border-radius: $pt-border-radius;
   }
-
 }
 
-.feeddetail
+.feeddetail // Detail page for a feed item
 {
   margin-top:50px;
+  color: var(--app-text-color);
 }
 
-.memberlist
+.memberlist // List of members
 {
   padding:0px;
-  > li
+  > li // Member list item
   {
     display: flex;
     align-items: center;
-    background-color: white;
+    background-color: var(--app-card-bg-color); // Was white
     padding:10px;
+    color: var(--app-text-color);
 
     > *:not(:first-child)
     {
@@ -1447,7 +1538,7 @@ h1.lianmi
     }
     &:not(:last-child)
     {
-      border-bottom: 1px solid $light-gray5;
+      border-bottom: 1px solid var(--app-border-color); // Was $light-gray5
     }
 
     &:hover
@@ -1456,7 +1547,7 @@ h1.lianmi
       {
         display: flex;
       }
-      background-color: rgba( 255, 255, 255, .96 );
+      background-color: var(--app-feed-item-hover-bg); // Was rgba( 255, 255, 255, .96 )
     }
 
     .image
@@ -1480,31 +1571,29 @@ h1.lianmi
       {
         font-size: $lm-font3;
         margin-bottom: 5px;
+        color: var(--app-text-color);
       }
 
-      .title.blacklist
+      .title.blacklist // Blacklisted user title
       {
         *
         {
-          color:$gray5;
+          color: var(--app-secondary-text-color) !important; // Was $gray5
           text-decoration: line-through;
         }
-        
       }
-      .title.halfblacklist
+      .title.halfblacklist // Semi-blacklisted user title
       {
         *
         {
-          color:$gray5;
+          color: var(--app-secondary-text-color) !important; // Was $gray5
         }
       }
     }
-    
   }
-  .actionbar
+  .actionbar // Action bar within member list item
   {
     flex:5;
-    //background-color: aquamarine;
     display: none;
     justify-content:flex-end;
     
@@ -1513,16 +1602,16 @@ h1.lianmi
       padding:0px;
       display: flex;
       flex-direction: row;
-      > li
+      > li // Action item
       {
         display: flex;
         padding:5px;
-        color: $gray3;
+        color: var(--app-secondary-text-color); // Was $gray3
         cursor: pointer;
 
         &:hover
         {
-          color: $blue3;
+          color: var(--app-link-color); // Was $blue3
         }
       }
     }
@@ -1530,12 +1619,14 @@ h1.lianmi
 }
 
 
-.settingbox
+.settingbox // Container for settings page content
 {
-  .formbox
+  .formbox // Form box within settings
   {
-    background-color: white;
+    background-color: var(--app-card-bg-color); // Was white
     padding:20px;
+    color: var(--app-text-color);
+    // Blueprint form elements should mostly adapt via .bp3-dark
   }
 
   .buttonbar_inline
@@ -1549,36 +1640,31 @@ h1.lianmi
   }
 }
 
-.blacklistbuttonbox
+.blacklistbuttonbox // Box for blacklist buttons
 {
-  background-color: white;
+  background-color: var(--app-card-bg-color); // Was white
   padding:20px;
 }
 
 
-.grouplist
+.grouplist // List of groups
 {
   margin:0px;
   padding:10px;
-  // padding-top: 10px;
-  // padding-bottom: 10px;
-  background-color: white;
-  > li
+  background-color: var(--app-card-bg-color); // Was white
+  > li // Group list item
   {
     display: flex;
     padding:5px;
+    color: var(--app-text-color);
     &:hover
     {
-      background-color: #fdfdfd;
-      // .action
-      // {
-      //   visibility: visible;
-      // }
+      background-color: var(--app-feed-item-hover-bg); // Was #fdfdfd
     }
     &:not(:last-child)
     {
       padding-bottom: 7px;
-      border-bottom:1px solid $light-gray5;
+      border-bottom:1px solid var(--app-border-color); // Was $light-gray5
       margin-bottom: 5px;
     }
     > *:not(:first-child)
@@ -1605,43 +1691,44 @@ h1.lianmi
       justify-content: center;
       margin-left: 10px;
       
-      .title
+      .title // Group title
       {
         font-size: $lm-font3;
+        color: var(--app-text-color);
       }
-      .count
+      .count // Member/post count
       {
-        color:$gray5;
+        color: var(--app-secondary-text-color); // Was $gray5
         margin-top: 5px;
       }
     }
 
-    .action
+    .action // Action icon for group list item
     {
       flex:1;
       max-width: 30px;
       display: flex;
       align-items: center;
       justify-content: center;
-      // visibility: hidden;
       .pt-icon
       {
-        color:$gray5;
+        color: var(--app-secondary-text-color); // Was $gray5
       }
     }
-    
   }
 }
 
-.white
+.white // Class for elements that should always be white (use with caution, prefer semantic classes)
 {
-  background-color: white;
+  background-color: white; // This will override dark theme. If needed, define .app-dark-mode .white specifically.
 }
+// .app-dark-mode .white { background-color: var(--app-card-bg-color); } // If .white should also be themable
 
-.createnotice
+
+.createnotice // Notice for creation forms
 {
   font-size: $lm-font2;
-  color:$gray3;
+  color: var(--app-secondary-text-color); // Was $gray3
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1660,37 +1747,48 @@ h1.lianmi
 }
 
 
-.backbutton
+.backbutton // Back button style
 {
   .pt-button
   {
-    border: 1px solid #ccc;
+    border: 1px solid var(--app-border-color); // Was #ccc
+    // Blueprint buttons should adapt with bp3-dark, but if custom styling:
+    // background-color: var(--app-card-bg-color);
+    // color: var(--app-text-color);
+  }
+  .app-dark-mode .backbutton .pt-button {
+     // specific dark overrides if needed for custom styled blueprint button
   }
 }
-.imbox
+.imbox // IM chat box
 {
   position: fixed;
   bottom: 0px;
   right:10px;
-
   width:400px;
   height:550px;
-  background-color: white;
-  box-shadow:0 1px 2px rgba(0,0,0,.2);
-  border:1px solid $gray5;
+  background-color: var(--app-card-bg-color); // Was white
+  box-shadow:0 1px 2px rgba(0,0,0,.2); // Shadow might need adjustment
+  border:1px solid var(--app-border-color); // Was $gray5
   display:flex;
   flex-direction:column;
   z-index:$pt-z-index-content;
-  .topbar
+
+  .app-dark-mode & {
+    box-shadow:0 1px 3px rgba(0,0,0,.4);
+  }
+
+  .topbar // Top bar of IM box
   {
     flex:1;
     padding:10px;
     display: flex;
     flex-direction: row;
     align-items: center;
-    color:$gray3;
+    color: var(--app-text-color); // Was $gray3
     min-height: 40px;
     cursor: move;
+    border-bottom: 1px solid var(--app-border-color); // Add border for separation
 
     .title
     {
@@ -1708,46 +1806,50 @@ h1.lianmi
         }
       }
     }
-    .icon
+    .icon // Close/minimize icon
     {
       flex:1;
       display: flex;
       justify-content: flex-end;
       max-width: 20px;
+      .pt-icon {
+        color: var(--app-text-color);
+      }
     }
-
   }
-  .chat
+  .chat // Chat message area
   {
-    background-color: $light-gray3;
+    background-color: var(--app-bg-color); // Was $light-gray3, use main app bg or slightly different shade
     overflow-y: scroll;
     flex:30;
     height:410px;
     padding-top:10px;
     padding-bottom:10px;
-    .morelink
+    .morelink // "Load more messages" link
     {
       cursor: pointer;
-      color:$gray3;
+      color: var(--app-link-color); // Was $gray3
       text-align: center;
     }
-    .messageitem
+    .messageitem // Individual message item
     {
       clear:both;
       .line
       {
-        .text
+        .text // Message bubble
         {
-          background-color: white;
+          background-color: var(--app-card-bg-color); // Was white
+          color: var(--app-text-color);
           padding:8px;
           line-height: 1.6;
           clear:both;
           max-width: 240px;
           word-break: break-all;
+          border-radius: $pt-border-radius; // Add some radius
         }
       }
 
-      .line.right
+      .line.right // Outgoing message
       {
         text-align: right;
         .text
@@ -1757,11 +1859,11 @@ h1.lianmi
           border-bottom-left-radius:5px; 
           border-top-left-radius:5px; 
           border:0px;
-          color:white;
-          background-color: $blue5;
+          color: white; // Keep white text on primary color bg
+          background-color: var(--app-button-primary-bg); // Was $blue5
           a
           {
-            color:white;
+            color: white; // Links within outgoing message
             &:hover
             {
               text-decoration: underline;
@@ -1770,7 +1872,7 @@ h1.lianmi
         }
       }
 
-      .line.left
+      .line.left // Incoming message
       {
         text-align: left;
         .text
@@ -1779,25 +1881,27 @@ h1.lianmi
           border-bottom-right-radius:5px; 
           border-top-right-radius:5px; 
           border:0px;
+          // Uses default themed background and text color from above
         }
       }
 
-      .explain
+      .explain // Timestamp or other info below message
       {
         margin-top: 10px;
         margin-left:2px;
         margin-right:2px;
         clear:both;
+        color: var(--app-secondary-text-color);
       }
       margin-top:20px;
-      
     }
   }
-  .sendform
+  .sendform // Message input area
   {
     flex: 1;
     max-height: 80px;
-    input
+    border-top: 1px solid var(--app-border-color); // Add border for separation
+    input // Text input field
     {
       width:100%;
       border:0px;
@@ -1805,43 +1909,46 @@ h1.lianmi
       padding-left:10px;
       padding-right:10px;
       font-size: $lm-font1-5;
+      background-color: var(--app-card-bg-color); // Match card bg
+      color: var(--app-text-color);
 
       &::placeholder
       {
-        color:$light-gray1;
+        color: var(--app-secondary-text-color); // Was $light-gray1
       }
     }
   }
 }
 
-.noticebox
+.noticebox // Notification box
 {
   padding:0px;
   margin: 0px;
-  .noticelist
+  .noticelist // List of notifications
   {
     padding:10px;
     margin:0px;
-    background-color: white;
-    > li 
+    background-color: var(--app-card-bg-color); // Was white
+    > li // Notification item
     {
       &.read
       {
-        color:$gray5;
+        color: var(--app-secondary-text-color); // Was $gray5
       }
       &.unread
       {
-        color:$blue3;
+        color: var(--app-link-color); // Was $blue3
+        font-weight: bold; // Make unread more prominent
       }
       display: flex;
       &:hover
       {
-        background-color: #fdfdfd;
+        background-color: var(--app-feed-item-hover-bg); // Was #fdfdfd
       }
       &:not(:last-child)
       {
         padding-bottom: 7px;
-        border-bottom:1px solid $light-gray5;
+        border-bottom:1px solid var(--app-border-color); // Was $light-gray5
         margin-bottom: 5px;
       }
       .item
@@ -1865,87 +1972,104 @@ h1.lianmi
             max-height: 48px;
             border-radius: 3px;
           }
-          
         }
         .content
         {
           flex:10;
           display: flex;
           flex-direction: column;
-          .text
+          .text // Notification text
           {
             margin-top: 5px;
             font-size: $lm-font1-5;
             display: flex;
             align-items: center;
             word-break: break-all;
+            color: var(--app-text-color); // Ensure text color
           }
         }
-        .action
+        .action // Action button in notification
         {
           flex:1;
           min-width:100px;
           max-width:100px;
           
-          span.pt-button-text
+          span.pt-button-text // Text within Blueprint button
           {
-            color:$gray3;
-          } 
+            color: var(--app-text-color); // Was $gray3, ensure it's readable
+          }
+          .app-dark-mode & .bp3-button.bp3-minimal { // Specific for minimal buttons in dark mode
+             color: var(--app-link-color) !important;
+             &:hover {
+               background-color: rgba(var(--app-link-color-rgb,72, 162, 247), 0.15);
+             }
+          }
         }
       }
-      
     }
   }
 }
 
-.overbox
+.overbox // Generic overlay box
 {
     width:100%;
     height:100%;
     display: flex;
     align-items: center;
     justify-content: center;
-    .centerbox
+    // background-color: rgba(0,0,0,0.4); // Example backdrop
+    // .app-dark-mode & { background-color: rgba(0,0,0,0.6); }
+
+    .centerbox // Centered content within overlay
     {
         max-width:400px;
         min-width:400px;
         min-height:100px;
-        background-color: white;
+        background-color: var(--app-card-bg-color); // Was white
+        color: var(--app-text-color);
         border-radius: 5px;
         padding:20px;
     }
-    .section-qr
+    .section-qr // QR code section
     {
       padding:20px;
       text-align: center;
-      background-color: white;
-      .explain
+      background-color: var(--app-card-bg-color); // Was white
+      .explain // Explanation text for QR
       {
         padding:10px;
         font-size: $lm-font4;
-        color:$blue3;
+        color: var(--app-link-color); // Was $blue3
         a
         {
           margin-bottom: 2px;
-          border-bottom: 1px dashed $blue3;
+          border-bottom: 1px dashed var(--app-link-color); // Was $blue3
         }
       }
     }
 }
 
-.qrimg-box
+.qrimg-box // Box for QR image
 {
     img
     {
-        // border:10px white solid;
         max-width:200px;
+        // background-color: white; // If QR code itself is transparent and needs white bg
+        // padding: 10px; // If adding bg
+        // border-radius: 3px; // If adding bg
     }
 }
+// .app-dark-mode .qrimg-box img { // If QR codes are transparent and need a light background
+//   background-color: $light-gray5;
+//   padding: 10px;
+//   border-radius: 3px;
+// }
 
-.section-qr
+
+.section-qr // QR section specific styles
 {
     position: relative;
-    .close-button
+    .close-button // Close button for QR section
     {
         position: absolute;
         right:-30px;
@@ -1953,21 +2077,16 @@ h1.lianmi
         cursor: pointer;
         z-index:999;
 
-        svg
+        svg // Close icon SVG
         {
-            fill:white;
-            color:white;
+            fill: var(--app-text-color); // Was white
+            color: var(--app-text-color); // Was white
         }
     }
 }
 
-// .lm-toaster
-// {
-//   //background-color: $blue3;
-//   // color:white;
-// }
 
-.usermenuname
+.usermenuname // User menu name display
 {
   max-width: 120px;
   text-overflow: ellipsis;

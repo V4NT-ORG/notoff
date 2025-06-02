@@ -40,194 +40,151 @@ class Database extends LmObject
         $this->pdo->exec("SET NAMES 'utf8mb4';");
     }
 
-    // get data to result set
+    // Store the PDOStatement result for fetching methods
+    protected $stmt = null;
 
-    public function getData( $sql )
+    /**
+     * Prepares and executes a SQL statement.
+     *
+     * @param string $sql The SQL statement with placeholders.
+     * @param array $params An array of values to bind to the placeholders.
+     *                     For named placeholders, this should be an associative array (e.g., [':id' => 1]).
+     *                     For positional placeholders (?), this should be a 0-indexed array.
+     * @return \PDOStatement|false The PDOStatement object on success, or false on failure.
+     */
+    protected function executeStatement($sql, $params = [])
     {
-        $args = func_get_args();
-        array_unshift($args, 'getdata');
-        return call_user_func_array(array($this, 'bindData'),$args );
-    }
-
-
-
-
-    public function runSql()
-    {
-        $args = func_get_args();
-        array_unshift($args, 'runsql');
-        return call_user_func_array(array($this, 'bindData'),$args );
+        try {
+            $this->stmt = $this->pdo->prepare($sql);
+            if ($this->stmt) {
+                $this->stmt->execute($params);
+                return $this->stmt;
+            }
+            return false;
+        } catch (\PDOException $e) {
+            // Rethrow or handle as per application's error handling strategy
+            // For now, rethrow to be caught by the global error handler in lp.init.php
+            throw $e;
+        }
     }
 
     /**
-     * bindData 用于处理带绑定支持的SQL
-     * 第一个参数为 TYPE ， 当 TYPE = getdata 时，产生返回内容。否则为执行语句。
+     * Executes a SQL statement for fetching data (SELECT).
+     * After calling this, use one of the toArray(), toLine(), toVar() methods.
+     *
+     * @param string $sql The SQL SELECT statement with placeholders.
+     * @param array $params Parameters to bind to the statement.
+     * @return $this
      */
-    protected function bindData()
+    public function getData($sql, $params = [])
     {
-        $this->result=false;
-        $arg_num = func_num_args();
-        $arg_num = $arg_num - 1;
-        $args = func_get_args();
-        $type = array_shift($args);
-
-        if( $arg_num < 1 )
-        {
-            throw new \PdoException("NO SQL PASSBY");
-            return $this;
-        }
-        else
-        {
-            if( $arg_num == 1 )
-            {
-                $sql = $args[0];
-            }
-            else
-            {
-                // 绑定
-
-                $sql = array_shift($args);
-                if( $params = get_bind_params($sql) )
-                {
-                    //$sth = $this->pdo->prepare( $sql );
-                    $meta = $GLOBALS['meta'][$GLOBALS['meta_key']];
-
-                    if( isset( $meta['table'][0]['fields'] ) )
-                        $fields = $meta['table'][0]['fields'];
-
-                    $replace = array();
-
-                    foreach( $params as $param )
-                    {
-                        $value = array_shift( $args );
-                        if( isset( $fields[$param] ) && type2pdo($fields[$param]['type']) == PDO::PARAM_INT )
-                        {
-
-                            $replace[':'.$param] = intval($value);
-                            //$sth->bindValue(':'.$param, $value , type2pdo($fields[$param]['type']));
-                        }
-                        else
-                        {
-                            $replace[':'.$param] = "'" . s($value) . "'";
-                            //$sth->bindValue(':'.$param, $value , PDO::PARAM_STR);
-                        }
-                    }
-
-                    $sql = str_replace( array_keys($replace), array_values($replace), $sql );
-                }
-            }
-
-            if( 'getdata' == $type )
-            {
-                foreach( $this->pdo->query( $sql , PDO::FETCH_ASSOC ) as $item )
-                {
-
-                    if( is_array($this->result) ) $this->result[] = $item;
-                    else $this->result = array( '0' => $item );
-                }
-
-            }
-            else
-            {
-                $this->result = $this->pdo->exec( $sql );
-            }
-
-            //print_r( $this->result );
-
-
-
-            return $this;
-        }
-
-         return $this;
-
+        $this->executeStatement($sql, $params);
+        return $this;
     }
 
+    /**
+     * Executes a SQL statement that does not return a result set (INSERT, UPDATE, DELETE).
+     *
+     * @param string $sql The SQL statement with placeholders.
+     * @param array $params Parameters to bind to the statement.
+     * @return int|false The number of rows affected, or false on failure.
+     */
+    public function runSql($sql, $params = [])
+    {
+        $stmt = $this->executeStatement($sql, $params);
+        return $stmt ? $stmt->rowCount() : false;
+    }
 
-
-    // export
+    // export methods to retrieve data from $this->stmt
     public function toLine()
     {
-        if( !isset($this->result) ) return false;
-
-        $ret = $this->result;
-        $this->result = null;
-        return first($ret);
+        if (!$this->stmt) return false;
+        $result = $this->stmt->fetch(PDO::FETCH_ASSOC);
+        $this->stmt->closeCursor();
+        $this->stmt = null;
+        return $result;
     }
 
-    public function toVar( $field = null )
+    public function toVar($field_index = 0) // $field_index refers to column number if not named
     {
-        if( !isset($this->result) ) return false;
-
-        $ret = $this->result;
-        $this->result = null;
-
-        if( $field == null )
-            return first(first($ret));
-        else
-            return isset($ret[0][$field])?$ret[0][$field]:false;
+        if (!$this->stmt) return false;
+        $result = $this->stmt->fetchColumn($field_index);
+        $this->stmt->closeCursor();
+        $this->stmt = null;
+        return $result;
     }
 
     public function toArray()
     {
-        if( !isset($this->result) ) return false;
-
-        $ret = $this->result;
-        $this->result = null;
-        return $ret;
+        if (!$this->stmt) return false;
+        $result = $this->stmt->fetchAll(PDO::FETCH_ASSOC);
+        $this->stmt->closeCursor();
+        $this->stmt = null;
+        return $result ?: []; // Return empty array if no results
     }
 
-    public function col( $name )
+    public function col($name)
     {
         return $this->toColumn($name);
     }
 
-    public function toColumn( $name )
+    public function toColumn($name_or_index = 0)
     {
-        if( !isset($this->result) ) return false;
+        if (!$this->stmt) return false;
+        $results = $this->stmt->fetchAll(PDO::FETCH_ASSOC);
+        $this->stmt->closeCursor();
+        $this->stmt = null;
 
-        $rs = $this->result;
-        $this->result = null;
+        if (empty($results)) return [];
 
-        if( !isset( $rs ) || !is_array($rs) ) return false;
-        foreach( $rs as $line )
-            if( isset($line[$name]) ) $ret[] = $line[$name];
-
-        return isset($ret)?$ret:false;
+        $column = [];
+        foreach ($results as $row) {
+            if (is_int($name_or_index)) {
+                 $values = array_values($row);
+                 if(isset($values[$name_or_index])) $column[] = $values[$name_or_index];
+            } elseif (isset($row[$name_or_index])) {
+                $column[] = $row[$name_or_index];
+            } else {
+                // If the named column doesn't exist in a row, add null or skip?
+                // For now, skip if not found by name to avoid errors with inconsistent rows.
+            }
+        }
+        return $column;
     }
 
-    public function index( $name )
+    public function index($name)
     {
         return $this->toIndexedArray($name);
     }
 
-    public function toIndexedArray( $name )
+    public function toIndexedArray($key_column_name)
     {
-        if( !isset($this->result) ) return false;
+        if (!$this->stmt) return false;
+        $results = $this->stmt->fetchAll(PDO::FETCH_ASSOC);
+        $this->stmt->closeCursor();
+        $this->stmt = null;
 
-        $rs = $this->result;
-        $this->result = null;
+        if (empty($results)) return [];
 
-        if( !isset( $rs ) || !is_array($rs) ) return false;
-        foreach( $rs as $line )
-            $ret[$line[$name]] = $line;
-
-        return isset($ret)?$ret:false;
+        $indexed_array = [];
+        foreach ($results as $row) {
+            if (isset($row[$key_column_name])) {
+                $indexed_array[$row[$key_column_name]] = $row;
+            }
+        }
+        return $indexed_array;
     }
 
-    public function quote( $string )
+    public function quote($string)
     {
-        return $this->pdo->quote( $string );
+        // This method is generally not needed when using prepared statements for parameters.
+        // However, it might be used for other purposes (e.g., dynamically building parts of queries
+        // like table or column names, though that should be done with extreme caution and whitelisting).
+        return $this->pdo->quote($string);
     }
 
     public function lastId()
     {
         return $this->pdo->lastInsertId();
     }
-
-
-
-
-
-
 }

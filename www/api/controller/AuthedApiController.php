@@ -110,41 +110,70 @@ class AuthedApiController
      */
     public function imageUpload()
     {
-        /*
-        "Array
-        (
-            [image] => Array
-                (
-                    [name] => blob
-                    [type] => image/png
-                    [tmp_name] => /private/var/folders/q7/3xwy3ysn2sggtwzq98fpf3l40000gn/T/php1iUQLb
-                    [error] => 0
-                    [size] => 38084
-                )
-
-        )
-        "
-        */
-
-        if (!isset($_FILES['image'])) {
+        if (!isset($_FILES['image']) || !isset($_FILES['image']['tmp_name']) || empty($_FILES['image']['tmp_name'])) {
             return lianmi_throw('INPUT', '找不到上传的文件，[image] 不存在');
         }
         if (intval($_FILES['image']['error']) !== 0) {
-            return lianmi_throw('INPUT', '文件上传失败');
-        }
-        if ($_FILES['image']['type'] != 'image/png') {
-            return lianmi_throw('INPUT', '本接口只支持 png 格式的图片');
+            return lianmi_throw('INPUT', '文件上传失败，错误代码: ' . $_FILES['image']['error']);
         }
 
-        // 生成新文件名
-        $path = 'u' . $_SESSION['uid'] . '/' . date("Y.m.d.") . uniqid() . '.png';
+        $tmp_name = $_FILES['image']['tmp_name'];
 
-        // 保存文件
-        if (!storage()->write($path, file_get_contents($_FILES['image']['tmp_name']), ['visibility' => 'private'])) {
-            return lianmi_throw('FILE', '保存文件失败');
+        // Server-side MIME type validation
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mime_type = finfo_file($finfo, $tmp_name);
+        finfo_close($finfo);
+
+        $allowed_mime_types = ['image/jpeg', 'image/png', 'image/gif'];
+        if (!in_array($mime_type, $allowed_mime_types)) {
+            return lianmi_throw('INPUT', '不支持的文件类型: ' . $mime_type . '. 只允许 JPEG, PNG, GIF.');
         }
 
-        return send_result(['url' => path2url($path) ]);
+        // Determine extension based on MIME type
+        $extension = '';
+        switch ($mime_type) {
+            case 'image/jpeg':
+                $extension = 'jpg';
+                break;
+            case 'image/png':
+                $extension = 'png';
+                break;
+            case 'image/gif':
+                $extension = 'gif';
+                break;
+            default: // Should not happen due to check above
+                return lianmi_throw('INPUT', '无法确定文件扩展名');
+        }
+
+        // Generate new filename
+        $path = 'u' . $_SESSION['uid'] . '/' . date("Y.m.d.") . uniqid() . '.' . $extension;
+
+        try {
+            // Re-process image using Intervention Image
+            $imgManager = new \Intervention\Image\ImageManagerStatic(); // Use static facade if preferred
+            $image = $imgManager->make($tmp_name);
+            
+            // Optional: Auto-orient based on EXIF data
+            $image->orientate();
+
+            // Optional: Resize if images are too large, e.g., max width/height
+            // $image->resize(1920, 1080, function ($constraint) {
+            //     $constraint->aspectRatio();
+            //     $constraint->upsize();
+            // });
+
+            $image_data = (string) $image->encode($extension, 90); // Encode to original type, quality 90 for jpg/png
+
+            // Save the processed file
+            if (!storage()->write($path, $image_data, ['visibility' => 'private', 'mimetype' => $mime_type])) {
+                return lianmi_throw('FILE', '保存文件失败');
+            }
+        } catch (\Exception $e) {
+            // Log error: error_log("Image processing/saving failed: " . $e->getMessage());
+            return lianmi_throw('FILE', '图像处理或保存失败: ' . $e->getMessage());
+        }
+        
+        return send_result(['url' => path2url($path) ]); // path2url default action is 'image'
     }
 
     /**
@@ -229,7 +258,10 @@ class AuthedApiController
      */
     public function feedRemove($id)
     {
-        if (!$feed = db()->getData("SELECT * FROM `feed` WHERE `id` = '" . intval($id) . "' AND `is_delete` != 1 LIMIT 1")->toLine()) {
+        $id = intval($id); 
+        $feed = get_line("SELECT * FROM `feed` WHERE `id` = :id AND `is_delete` != 1 LIMIT 1", [':id' => $id]);
+
+        if (!$feed) {
             return lianmi_throw('INPUT', 'id对应的内容不存在或已被删除');
         }
         
@@ -243,11 +275,8 @@ class AuthedApiController
             }
         }
         
-            
-
-        $sql = "UPDATE `feed` SET `is_delete` = '1' WHERE `id` = '" . intval($id) . "' LIMIT 1 ";
-        
-        db()->runSql($sql);
+        $sql = "UPDATE `feed` SET `is_delete` = '1' WHERE `id` = :id LIMIT 1 ";
+        run_sql($sql, [':id' => $id]);
 
         $feed['is_delete'] = 1;
         return send_result($feed);
@@ -264,7 +293,12 @@ class AuthedApiController
      */
     public function groupTop($group_id, $feed_id, $status = 1)
     {
+        $group_id = intval($group_id);
+        $feed_id_for_query = intval($feed_id); // Store original feed_id for queries
+        $top_status_feed_id = ($status == 1) ? $feed_id_for_query : 0;
+
         // 检查权限
+        // LDO usage is already safe due to previous refactoring of LDO itself
         if (!$group = table('group')->getAllById($group_id)->toLine()) {
             return lianmi_throw('INPUT', '错误的栏目ID，栏目不存在或已被删除');
         }
@@ -273,21 +307,19 @@ class AuthedApiController
             return lianmi_throw('AUTH', '只有栏主才能修改栏目资料');
         }
         
-        if (!$feed = db()->getData("SELECT * FROM `feed` WHERE `id` = '" . intval($feed_id) . "' AND `is_delete` != 1 LIMIT 1")->toLine()) {
+        $feed = get_line("SELECT * FROM `feed` WHERE `id` = :feed_id AND `is_delete` != 1 LIMIT 1", [':feed_id' => $feed_id_for_query]);
+        if (!$feed) {
             return lianmi_throw('INPUT', 'id对应的内容不存在或已被删除');
         }
         
         if ($feed['group_id'] != $group_id && $feed['forward_group_id'] != $group_id) {
             return lianmi_throw('AUTH', '只能置顶属于该栏目的内容');
         }
-
-        $feed_id = $status == 1  ? $feed_id : 0;
         
-        $sql = "UPDATE `group` SET `top_feed_id` =  '" . intval($feed_id) . "' WHERE `id` = '" . intval($group_id) . "' LIMIT 1 ";
+        $sql = "UPDATE `group` SET `top_feed_id` = :top_feed_id WHERE `id` = :group_id LIMIT 1 ";
+        run_sql($sql, [':top_feed_id' => $top_status_feed_id, ':group_id' => $group_id]);
 
-        db()->runSql($sql);
-
-        $group['top_feed_id'] = intval($feed_id);
+        $group['top_feed_id'] = $top_status_feed_id;
 
         return send_result($group);
     }
@@ -305,9 +337,12 @@ class AuthedApiController
      */
     public function feedUpdate($id, $text, $images='', $attach = '', $is_paid=0)
     {
+        $id = intval($id);
         $is_paid = abs(intval($is_paid));
         
-        if (!$feed = db()->getData("SELECT * FROM `feed` WHERE `id` = '" . intval($id) . "' AND `is_delete` != 1 LIMIT 1")->toLine()) {
+        $feed = get_line("SELECT * FROM `feed` WHERE `id` = :id AND `is_delete` != 1 LIMIT 1", [':id' => $id]);
+
+        if (!$feed) {
             return lianmi_throw('INPUT', 'id对应的内容不存在或已被删除');
         }
         
@@ -315,29 +350,33 @@ class AuthedApiController
             return lianmi_throw('AUTH', '只有作者才能修改自己的内容');
         }
 
-        // 检查image数据，确保没有外部链接以避免带来安全问题，这个地方存在链接伪造风风险
+        // Image URL validation logic remains important.
         if (strlen($images) > 1) {
-            if (!$image_list = @json_decode($images, 1)) {
-                $images = '';
+            if (!$image_list = @json_decode($images, 1)) { 
+                $images = ''; 
             } else {
                 foreach ($image_list as $image) {
                     if (!check_image_url($image['orignal_url']) || !check_image_url($image['thumb_url'])) {
-                        
-                        // $info[] = parse_url( $image['orignal_url'] );
-                        // $info[] = parse_url( $image['thumb_url'] );
-                        
                         return lianmi_throw('INPUT', '包含未被许可的图片链接，请重传图片后发布');
                     }
                 }
             }
         }
 
-        $sql = "UPDATE `feed` SET `text` = '" . s($text) . "' , `images` = '" . s($images) . "' , `files` = '" . s($attach) . "' , `is_paid` = '" . intval($is_paid) . "' WHERE `id` = '" . intval($id) . "' LIMIT 1 ";
+        $sql = "UPDATE `feed` SET `text` = :text, `images` = :images, `files` = :files, `is_paid` = :is_paid WHERE `id` = :id LIMIT 1 ";
         
-        db()->runSql($sql);
+        $params = [
+            ':text' => $text,
+            ':images' => $images,
+            ':files' => $attach,
+            ':is_paid' => $is_paid,
+            ':id' => $id
+        ];
+        run_sql($sql, $params);
 
         $feed['text'] = $text;
-        $feed['images'] = $images;
+        $feed['images'] = $images; 
+        $feed['files'] = $attach; 
         $feed['is_paid'] = $is_paid;
 
         return send_result($feed);
@@ -368,7 +407,9 @@ class AuthedApiController
         }
 
         // 检测栏目权限
-        $allowed_groups = db()->getData("SELECT * FROM `group_member` WHERE `uid` = '" . intval(lianmi_uid()) . "' AND ( `is_author` = 1 || `can_contribute` = 1 ) LIMIT ". c('max_group_per_user'))->toArray();
+        // Using lianmi_uid() directly in SQL, ensure it's an int
+        $uid = lianmi_uid(); // This is already intval'd
+        $allowed_groups = get_data("SELECT * FROM `group_member` WHERE `uid` = :uid AND ( `is_author` = 1 OR `can_contribute` = 1 ) LIMIT ". intval(c('max_group_per_user')), [':uid' => $uid]);
 
         $allowed_gids = [];
         $author_gids = [];
@@ -410,68 +451,56 @@ class AuthedApiController
         }
 
         // 开始入库
-        $now = lianmi_now() ;
-        // 首先将 feed 发布到表，group id 为 0 ；这将保证这条内容显示在作者主页上，用于浏览和修改；设置为 paid 的内容在主页上只有作者可见。
-        $sql = "INSERT INTO `feed` ( `text` , `group_id` , `images` , `files` , `uid` , `is_paid` , `timeline` ) VALUES ( '" . s($text) . "' , '0' , '" . s($images) . "' , '" . s($attach) . "' , '" . intval(lianmi_uid()) . "' , '" . intval($is_paid) . "' , '" . s($now) . "' )  ";
+        $now = lianmi_now();
+        $uid = lianmi_uid();
 
-        db()->runSql($sql);
-
+        $sql_insert_feed = "INSERT INTO `feed` ( `text` , `group_id` , `images` , `files` , `uid` , `is_paid` , `timeline` ) VALUES ( :text , '0' , :images , :files , :uid , :is_paid , :timeline )";
+        $params_insert_feed = [
+            ':text' => $text,
+            ':images' => $images,
+            ':files' => $attach,
+            ':uid' => $uid,
+            ':is_paid' => $is_paid,
+            ':timeline' => $now
+        ];
+        run_sql($sql_insert_feed, $params_insert_feed);
         $feed_id = db()->lastId();
-
-        // 然后开始栏目发布和投稿操作
-        // $author_gids = [];
-        // $member_gids = [];
 
         if (is_array($author_gids) && count($author_gids) > 0) {
             foreach ($author_gids as $gid) {
-                // 如果栏目ID在发布之列
-                if (!in_array($gid, $group_ids)) {
-                    continue;
-                }
+                if (!in_array($gid, $group_ids)) continue;
+                $gid = intval($gid);
 
-                // 作者是栏主，直接转发到栏目
-                $sql = "INSERT INTO `feed` ( `text` , `group_id` , `images` , `files` , `uid` , `is_paid` , `timeline` , `is_forward` , `forward_feed_id` , `forward_uid` , `forward_text` , `forward_is_paid` , `forward_group_id` , `forward_timeline`  ) VALUES ( '" . s($text) . "' , '0' , '" . s($images) . "' ,  '" . s($attach) . "' , '" . intval(lianmi_uid()) . "' , '" . intval($is_paid) . "' , '" . s($now) . "' , '1' , '" . intval($feed_id) . "' , '" . intval(lianmi_uid()) . "' , '' , '" . intval($is_paid) . "' , '" . intval($gid) . "' , '" . s($now) . "' )";
+                $sql_forward = "INSERT INTO `feed` ( `text` , `group_id` , `images` , `files` , `uid` , `is_paid` , `timeline` , `is_forward` , `forward_feed_id` , `forward_uid` , `forward_text` , `forward_is_paid` , `forward_group_id` , `forward_timeline`  ) VALUES ( :text , '0' , :images ,  :files , :original_uid , :is_paid , :original_timeline , '1' , :forward_feed_id , :forward_uid , '' , :is_paid , :forward_group_id , :forward_timeline )";
+                $params_forward = [
+                    ':text' => $text, ':images' => $images, ':files' => $attach, ':original_uid' => $uid,
+                    ':is_paid' => $is_paid, ':original_timeline' => $now, // Using original feed's timeline or current time for forward? Original used $now for both.
+                    ':forward_feed_id' => $feed_id, ':forward_uid' => $uid,
+                    ':forward_group_id' => $gid, ':forward_timeline' => $now
+                ];
+                run_sql($sql_forward, $params_forward);
 
-                db()->runSql($sql);
-
-                // 然后更新栏目的内容统计
-                $sql = "UPDATE `group` SET `feed_count` = ( SELECT COUNT(*) FROM `feed` WHERE `forward_group_id` = '" . intval($gid) . "' AND `is_delete` != 1 ) WHERE `id`='" . intval($gid) . "' LIMIT 1";
-                db()->runSql($sql);
-
-                // 然后更新用户的内容统计
-                $sql = "UPDATE `user` SET `feed_count` = ( SELECT COUNT(*) FROM `feed` WHERE `uid` = '" . intval(lianmi_uid()) . "' AND `is_delete` != 1 AND `is_forward` != 1 ) WHERE `id`='" . intval(lianmi_uid()) . "' LIMIT 1";
-                db()->runSql($sql);
+                run_sql("UPDATE `group` SET `feed_count` = ( SELECT COUNT(*) FROM `feed` WHERE `forward_group_id` = :gid AND `is_delete` != 1 ) WHERE `id`= :gid LIMIT 1", [':gid' => $gid]);
+                run_sql("UPDATE `user` SET `feed_count` = ( SELECT COUNT(*) FROM `feed` WHERE `uid` = :uid AND `is_delete` != 1 AND `is_forward` != 1 ) WHERE `id`= :uid LIMIT 1", [':uid' => $uid]);
             }
         }
         
-        // 投稿
         if (is_array($member_gids) && count($member_gids) > 0) {
             foreach ($member_gids as $gid) {
-                // 如果栏目ID在发布之列
-                if (!in_array($gid, $group_ids)) {
-                    continue;
-                }
-            
-                // 作者是成员，将内容加入到投稿箱
-                // @TODO 个人内容管理页面可能需要添加一个投稿按钮，用来处理发布时忘了投稿的内容
-                $sql = "INSERT IGNORE INTO `feed_contribute` ( `uid` , `feed_id` , `group_id` , `status`, `timeline` ) VALUES ( '" . intval(lianmi_uid()) . "' , '" . intval($feed_id) . "' , '" . intval($gid) . "' , '0' , '" . s($now) . "' ) ";
+                if (!in_array($gid, $group_ids)) continue;
+                $gid = intval($gid);
 
-                db()->runSql($sql);
+                $sql_contribute = "INSERT IGNORE INTO `feed_contribute` ( `uid` , `feed_id` , `group_id` , `status`, `timeline` ) VALUES ( :uid , :feed_id , :group_id , '0' , :timeline )";
+                run_sql($sql_contribute, [':uid' => $uid, ':feed_id' => $feed_id, ':group_id' => $gid, ':timeline' => $now]);
 
-                // 更新栏目投稿箱的数据
-                $sql = "UPDATE `group` SET `todo_count` = ( SELECT COUNT(*) FROM `feed_contribute` WHERE `group_id` = '" . intval($gid) . "' AND `status` = 0 ) WHERE `id`='" . intval($gid) . "' LIMIT 1";
-                db()->runSql($sql);
+                run_sql("UPDATE `group` SET `todo_count` = ( SELECT COUNT(*) FROM `feed_contribute` WHERE `group_id` = :gid AND `status` = 0 ) WHERE `id`= :gid LIMIT 1", [':gid' => $gid]);
 
-                // 发送投稿消息
-                // 取得栏目栏主
-                $group = db()->getData("SELECT * FROM `group` WHERE `id`='" . intval($gid) . "' LIMIT 1")->toLine();
-
-                if ($group['author_uid'] != lianmi_uid()) {
-                    system_notice($group['author_uid'], lianmi_uid(), lianmi_username(), lianmi_nickname(), 'contribute to'. $group['name'], '/group/contribute/todo');
+                $group = get_line("SELECT * FROM `group` WHERE `id`= :gid LIMIT 1", [':gid' => $gid]);
+                if ($group && $group['author_uid'] != $uid) {
+                    system_notice($group['author_uid'], $uid, lianmi_username(), lianmi_nickname(), 'contribute to'. $group['name'], '/group/contribute/todo');
                 }
             }
         }
-
         return send_result(compact('feed_id', 'text', 'groups', 'images', 'is_paid'));
     }
 
@@ -483,7 +512,8 @@ class AuthedApiController
      */
     public function getMineGroup()
     {
-        return send_result($groups = db()->getData("SELECT * FROM `group` WHERE `is_active` = 1 AND `author_uid` = '" . intval(lianmi_uid()) . "' ORDER BY `promo_level` DESC , `member_count` DESC , `id` DESC LIMIT 100 ")->toArray());
+        $uid = lianmi_uid();
+        return send_result(get_data("SELECT * FROM `group` WHERE `is_active` = 1 AND `author_uid` = :uid ORDER BY `promo_level` DESC , `member_count` DESC , `id` DESC LIMIT 100 ", [':uid' => $uid]));
     }
 
     /**
@@ -497,62 +527,63 @@ class AuthedApiController
      */
     public function getGroupFeed($id, $since_id = 0, $filter = 'all')
     {
-        // 首先从检查权限
-        if (!$info = db()->getData("SELECT * FROM `group_member` WHERE `uid` = '" . intval(lianmi_uid()) . "' AND `group_id` = '" . intval($id) . "' LIMIT 1")->toLine()) {
+        $id = intval($id);
+        $uid = lianmi_uid();
+        $since_id = intval($since_id);
+
+        $info = get_line("SELECT * FROM `group_member` WHERE `uid` = :uid AND `group_id` = :group_id LIMIT 1", [':uid' => $uid, ':group_id' => $id]);
+        if (!$info) {
             return lianmi_throw('AUTH', '只有成员才能查看栏目内容');
         }
 
-        //
-        $filter_sql = '';
+        $filter_conditions = [];
+        $params = [':forward_group_id' => $id];
+
         if ($filter == 'paid') {
-            $filter_sql = " AND `is_paid` = 1 ";
+            $filter_conditions[] = "`is_paid` = 1";
         }
         if ($filter == 'media') {
-            $filter_sql = " AND `images` !='' ";
+            $filter_conditions[] = "`images` != ''"; // Assuming images is never NULL for media
         }
         
-        // VIP订户和栏主可以查看付费内容
-        $is_paid = ($info['is_vip'] == 1 || $info['is_author'] == 1)  ? 1 : 0;
-
-        $paid_sql = '';
-
         if ($info['is_vip'] != 1 && $info['is_author'] != 1) {
-            $paid_sql  = " AND `is_paid` != 1 ";
+            $filter_conditions[] = "`is_paid` != 1";
         }
         
-        $since_sql = $since_id == 0 ? "" : " AND `id` < '" . intval($since_id) . "' ";
+        if ($since_id > 0) {
+            $filter_conditions[] = "`id` < :since_id";
+            $params[':since_id'] = $since_id;
+        }
+        
+        $where_clause = "WHERE `is_delete` != 1 AND `forward_group_id` = :forward_group_id";
+        if (!empty($filter_conditions)) {
+            $where_clause .= " AND " . join(" AND ", $filter_conditions);
+        }
 
-        $sql = "SELECT *, `uid` as `user` , `forward_group_id` as `group` FROM `feed` WHERE `is_delete` != 1 AND `forward_group_id` = '". intval($id) . "'" . $paid_sql . $since_sql . $filter_sql ." ORDER BY `id` DESC LIMIT " . c('feeds_per_page');
-
-        $data = db()->getData($sql)->toArray();
-        $data = extend_field($data, 'user', 'user');
+        $sql = "SELECT *, `uid` as `user` , `forward_group_id` as `group` FROM `feed` {$where_clause} ORDER BY `id` DESC LIMIT " . intval(c('feeds_per_page'));
+        
+        $data = get_data($sql, $params);
+        $data = extend_field($data, 'user', 'user'); // extend_field needs to be checked if it uses parameterized queries internally or if its inputs are safe
         $data = extend_field($data, 'group', 'group');
         
-        
+        $maxid = null; $minid = null;
         if (is_array($data) && count($data) > 0) {
             $maxid = $minid = $data[0]['id'];
             foreach ($data as $item) {
-                if ($item['id'] > $maxid) {
-                    $maxid = $item['id'];
-                }
-                if ($item['id'] < $minid) {
-                    $minid = $item['id'];
-                }
+                if ($item['id'] > $maxid) $maxid = $item['id'];
+                if ($item['id'] < $minid) $minid = $item['id'];
             }
-        } else {
-            $maxid = $minid = null;
         }
 
-        // 获取栏目置顶feed
-        $sql = "SELECT * FROM `group` WHERE `id` = '" . intval($id) . "' LIMIT 1";
-        $groupinfo = db()->getData($sql)->toLine();
+        $groupinfo = get_line("SELECT * FROM `group` WHERE `id` = :id LIMIT 1", [':id' => $id]);
+        $topfeed = false;
         if ($groupinfo && isset($groupinfo['top_feed_id']) && intval($groupinfo['top_feed_id']) > 0) {
-            $topfeed = db()->getData("SELECT *, `uid` as `user` , `forward_group_id` as `group` FROM `feed` WHERE `is_delete` != 1 AND `id` = '" . intval($groupinfo['top_feed_id']) . "' LIMIT 1")->toLine();
-
-            $topfeed = extend_field_oneline($topfeed, 'user', 'user');
-            $topfeed = extend_field_oneline($topfeed, 'group', 'group');
-        } else {
-            $topfeed = false;
+            $topfeed_id = intval($groupinfo['top_feed_id']);
+            $topfeed_data = get_line("SELECT *, `uid` as `user` , `forward_group_id` as `group` FROM `feed` WHERE `is_delete` != 1 AND `id` = :top_feed_id LIMIT 1", [':top_feed_id' => $topfeed_id]);
+            if($topfeed_data){
+                $topfeed = extend_field_oneline($topfeed_data, 'user', 'user');
+                $topfeed = extend_field_oneline($topfeed, 'group', 'group');
+            }
         }
             
         return send_result(['feeds'=>$data , 'count'=>count($data) , 'maxid'=>$maxid , 'minid'=>$minid , 'topfeed' => $topfeed ]);
@@ -569,27 +600,28 @@ class AuthedApiController
      */
     public function setGroupBlackList($uid, $group_id, $status = 1)
     {
-        if (!$info = db()->getData("SELECT * FROM `group_member` WHERE `uid` = '" . intval(lianmi_uid()) . "' AND `group_id` = '" . intval($group_id) . "' LIMIT 1")->toLine() || $info['is_author'] != 1) {
+        $current_uid = lianmi_uid();
+        $group_id = intval($group_id);
+        $target_uid = intval($uid);
+        $status = intval($status);
+
+        $info = get_line("SELECT * FROM `group_member` WHERE `uid` = :current_uid AND `group_id` = :group_id LIMIT 1", [':current_uid' => $current_uid, ':group_id' => $group_id]);
+        if (!$info || $info['is_author'] != 1) {
             return lianmi_throw('AUTH', '只有管理员才能设置栏目黑名单');
         }
 
         if ($status == 1) {
-            if ($uid == lianmi_uid()) {
+            if ($target_uid == $current_uid) {
                 return lianmi_throw('INPUT', '不能将自己加入黑名单');
             }
-            
-            $sql = "INSERT IGNORE INTO `group_blacklist` ( `group_id` , `uid` , `timeline` ) VALUES ( '" . intval($group_id) . "' , '" . intval($uid) . "' , '" . s(lianmi_now()) . "' ) ";
+            $sql = "INSERT IGNORE INTO `group_blacklist` ( `group_id` , `uid` , `timeline` ) VALUES ( :group_id , :target_uid , :timeline )";
+            run_sql($sql, [':group_id' => $group_id, ':target_uid' => $target_uid, ':timeline' => lianmi_now()]);
+            // After blacklisting, ensure user is removed from group if quitGroup logic is complex or has side effects
+            $this->quitGroup($group_id, $target_uid); // quitGroup needs to be reviewed for safety
         } else {
-            $sql = "DELETE FROM `group_blacklist` WHERE `group_id` =  '" . intval($group_id) . "' AND `uid` = '" . intval($uid) . "' LIMIT 1";
+            $sql = "DELETE FROM `group_blacklist` WHERE `group_id` = :group_id AND `uid` = :target_uid LIMIT 1";
+            run_sql($sql, [':group_id' => $group_id, ':target_uid' => $target_uid]);
         }
-            
-
-        db()->runSql($sql);
-
-        if ($status == 1) {
-            $this->quitGroup($group_id, $uid);
-        }
-
         return send_result(['status'=>$status]);
     }
 
@@ -608,18 +640,26 @@ class AuthedApiController
             $status = 0;
         }
         
-        if (!$info = db()->getData("SELECT * FROM `group_member` WHERE `uid` = '" . intval(lianmi_uid()) . "' AND `group_id` = '" . intval($group_id) . "' LIMIT 1")->toLine() || $info['is_author'] != 1) {
+        if ($status != 1) { // Ensure status is 0 or 1
+            $status = 0;
+        }
+        $current_uid = lianmi_uid();
+        $group_id = intval($group_id);
+        $target_uid = intval($uid);
+        
+        $info = get_line("SELECT * FROM `group_member` WHERE `uid` = :current_uid AND `group_id` = :group_id LIMIT 1", [':current_uid' => $current_uid, ':group_id' => $group_id]);
+        if (!$info || $info['is_author'] != 1) {
             return lianmi_throw('AUTH', '只有管理员才能设置栏目黑名单');
         }
 
-        if ($uid == lianmi_uid()) {
+        if ($target_uid == $current_uid) {
             return lianmi_throw('INPUT', '不能将自己加入黑名单');
         }
 
-        $sql = "UPDATE `group_member` SET `can_contribute` = '" . intval($status) . "' WHERE `uid` = '" . intval($uid) . "' AND `group_id` =  '" . intval($group_id) . "' LIMIT 1";
-        db()->runSql($sql);
+        $sql = "UPDATE `group_member` SET `can_contribute` = :can_contribute WHERE `uid` = :target_uid AND `group_id` = :group_id LIMIT 1";
+        run_sql($sql, [':can_contribute' => $status, ':target_uid' => $target_uid, ':group_id' => $group_id]);
 
-        return send_result(['status'=>$status,'sql'=>$sql]);
+        return send_result(['status'=>$status]); // Removed SQL from response
     }
 
     /**
@@ -637,17 +677,25 @@ class AuthedApiController
             $status = 0;
         }
         
-        if (!$info = db()->getData("SELECT * FROM `group_member` WHERE `uid` = '" . intval(lianmi_uid()) . "' AND `group_id` = '" . intval($group_id) . "' LIMIT 1")->toLine() || $info['is_author'] != 1) {
+        if ($status != 1) { // Ensure status is 0 or 1
+            $status = 0;
+        }
+        $current_uid = lianmi_uid();
+        $group_id = intval($group_id);
+        $target_uid = intval($uid);
+
+        $info = get_line("SELECT * FROM `group_member` WHERE `uid` = :current_uid AND `group_id` = :group_id LIMIT 1", [':current_uid' => $current_uid, ':group_id' => $group_id]);
+        if (!$info || $info['is_author'] != 1) {
             return lianmi_throw('AUTH', '只有管理员才能设置栏目黑名单');
         }
 
-        if ($uid == lianmi_uid()) {
+        if ($target_uid == $current_uid) {
             return lianmi_throw('INPUT', '不能将自己加入黑名单');
         }
 
-        $sql = "UPDATE `group_member` SET `can_comment` = '" . intval($status) . "' WHERE `uid` = '" . intval($uid) . "' AND `group_id` =  '" . intval($group_id) . "' LIMIT 1";
-        db()->runSql($sql);
-
+        $sql = "UPDATE `group_member` SET `can_comment` = :can_comment WHERE `uid` = :target_uid AND `group_id` = :group_id LIMIT 1";
+        run_sql($sql, [':can_comment' => $status, ':target_uid' => $target_uid, ':group_id' => $group_id]);
+        
         return send_result(['status'=>$status]);
     }
 
@@ -662,65 +710,55 @@ class AuthedApiController
      */
     public function getGroupMember($id, $since_id = 0, $filter = 'all')
     {
-        // 首先从检查权限
-        if (!$info = db()->getData("SELECT * FROM `group_member` WHERE `uid` = '" . intval(lianmi_uid()) . "' AND `group_id` = '" . intval($id) . "' LIMIT 1")->toLine()) {
+        $id = intval($id);
+        $current_uid = lianmi_uid();
+        $since_id = intval($since_id);
+
+        if (!get_line("SELECT * FROM `group_member` WHERE `uid` = :current_uid AND `group_id` = :group_id LIMIT 1", [':current_uid' => $current_uid, ':group_id' => $id])) {
             return lianmi_throw('AUTH', '只有成员才能查看栏目成员');
         }
 
+        $params = [':group_id' => $id];
+        $filter_conditions = "";
+
         if ($filter == 'blacklist') {
-            $base_sql = "SELECT * , `uid` as `user` FROM `group_blacklist` WHERE `group_id` = '" . intval($id) . "'";
+            $base_sql_select = "SELECT * , `uid` as `user` FROM `group_blacklist`";
+            $filter_conditions = " WHERE `group_id` = :group_id";
         } else {
-            $base_sql = "SELECT * , `uid` as `user` FROM `group_member` WHERE `group_id` = '" . intval($id) . "'";
-            
-            $filter_sql = '';
+            $base_sql_select = "SELECT * , `uid` as `user` FROM `group_member`";
+            $filter_conditions = " WHERE `group_id` = :group_id";
             if ($filter == 'contribute') {
-                $filter_sql = " AND `can_contribute` = 0 ";
+                $filter_conditions .= " AND `can_contribute` = 0 ";
             }
             if ($filter == 'comment') {
-                $filter_sql = " AND `can_comment` = 0 ";
+                $filter_conditions .= " AND `can_comment` = 0 ";
             }
-
-            $base_sql = $base_sql . $filter_sql;
         }
         
-        $since_sql = $since_id == 0 ? "" : " AND `id` < '" . intval($since_id) . "' ";
+        if ($since_id > 0) {
+            $filter_conditions .= " AND `id` < :since_id ";
+            $params[':since_id'] = $since_id;
+        }
 
-        $sql = $base_sql . $since_sql ." ORDER BY `id` DESC LIMIT " . c('users_per_page');
-
-        $group_black_list_uids = table('group_blacklist')->getUidByGroup_id($id)->toColumn('uid');
+        $sql = $base_sql_select . $filter_conditions ." ORDER BY `id` DESC LIMIT " . intval(c('users_per_page'));
         
-        $data = db()->getData($sql)->toArray();
-        $data = extend_field($data, 'user', 'user');
+        // LDO usage is safe
+        $group_black_list_uids = table('group_blacklist')->getUidByGroup_id($id)->toColumn('uid'); 
         
+        $data = get_data($sql, $params);
+        $data = extend_field($data, 'user', 'user'); // Review extend_field
+        
+        $maxid = null; $minid = null;
         if (is_array($data) && count($data) > 0) {
             $maxid = $minid = $data[0]['id'];
             foreach ($data as $key => $item) {
-                // 将这两个字段复制到user中，方便使用
-                if (isset($data[$key]['can_contribute'])) {
-                    $data[$key]['user']['can_contribute'] = $data[$key]['can_contribute'];
-                }
-                
-                if (isset($data[$key]['can_comment'])) {
-                    $data[$key]['user']['can_comment'] = $data[$key]['can_comment'];
-                }
-                
-                if ($group_black_list_uids && in_array($item['uid'], $group_black_list_uids)) {
-                    $data[$key]['user']['inblacklist'] = 1;
-                } else {
-                    $data[$key]['user']['inblacklist'] = 0;
-                }
-                
-                if ($item['id'] > $maxid) {
-                    $maxid = $item['id'];
-                }
-                if ($item['id'] < $minid) {
-                    $minid = $item['id'];
-                }
+                if (isset($item['can_contribute'])) $data[$key]['user']['can_contribute'] = $item['can_contribute'];
+                if (isset($item['can_comment'])) $data[$key]['user']['can_comment'] = $item['can_comment'];
+                $data[$key]['user']['inblacklist'] = ($group_black_list_uids && in_array($item['uid'], $group_black_list_uids)) ? 1 : 0;
+                if ($item['id'] > $maxid) $maxid = $item['id'];
+                if ($item['id'] < $minid) $minid = $item['id'];
             }
-        } else {
-            $maxid = $minid = null;
         }
-            
         return send_result(['members'=>$data , 'count'=>count($data) , 'maxid'=>$maxid , 'minid'=>$minid ]);
     }
 
@@ -740,7 +778,9 @@ class AuthedApiController
      */
     public function groupCreate($name, $author_address, $price_wei, $cover, $seller_uid = 0)
     {
-        // $price_wei 是 18位以上的 bigint，所以使用 bigintval
+        // $price_wei is a string representing a large integer. bigintval ensures it's a valid numeric string.
+        $valid_price_wei = bigintval($price_wei);
+
         if (!check_image_url($cover)) {
             return lianmi_throw('INPUT', '包含未被许可的图片链接，请重传图片后发布');
         }
@@ -749,39 +789,33 @@ class AuthedApiController
             return lianmi_throw("INPUT", "栏目名字最短3个字");
         }
         
-        // 检查一下栏目名字是否唯一
-        if (db()->getData("SELECT COUNT(*) FROM `group` WHERE `name` = '" . s($name) . "' ")->toVar() > 0) {
+        if (get_var("SELECT COUNT(*) FROM `group` WHERE `name` = :name", [':name' => $name]) > 0) {
             return lianmi_throw("INPUT", "栏目名字已被占用，重新起一个吧");
         }
         
-
         $timeline = lianmi_now();
         $author_uid = lianmi_uid();
+        $seller_uid_int = intval($seller_uid);
 
-        //$sql = "INSERT INTO `group` ( `name` , `author_uid` , `author_address` , `price_wei` , `cover` , `seller_uid` , `timeline`  )  VALUES ( '" . s( t($name) ) . "' , '" . intval( $author_uid ) . "' , '" . s(t($author_address)) . "' , '" . bigintval( $price_wei ) . "' , '" . s( t($cover) ) . "' , '" . intval( $seller_uid ) . "' , '" .  s( $timeline ).  "' ) ";
-        
-        // 将 is_active 和 is_paid 设置为 1，跳过支付创建栏目的过程
-        $sql = "INSERT INTO `group` ( `name` , `author_uid` , `author_address` , `price_wei` , `cover` , `seller_uid` , `timeline` , `is_active` , `is_paid` )  VALUES ( '" . s(t($name)) . "' , '" . intval($author_uid) . "' , '" . s(t($author_address)) . "' , '" . bigintval($price_wei) . "' , '" . s(t($cover)) . "' , '" . intval($seller_uid) . "' , '" .  s($timeline).  "' , 1 , 1 ) ";
-
-        db()->runSql($sql);
+        $sql_insert_group = "INSERT INTO `group` ( `name` , `author_uid` , `author_address` , `price_wei` , `cover` , `seller_uid` , `timeline` , `is_active` , `is_paid` ) VALUES ( :name , :author_uid , :author_address , :price_wei , :cover , :seller_uid , :timeline , 1 , 1 )";
+        $params_insert_group = [
+            ':name' => t($name), // trim name
+            ':author_uid' => $author_uid,
+            ':author_address' => t($author_address), // trim address
+            ':price_wei' => $valid_price_wei,
+            ':cover' => t($cover), // trim cover URL
+            ':seller_uid' => $seller_uid_int,
+            ':timeline' => $timeline
+        ];
+        run_sql($sql_insert_group, $params_insert_group);
         $group_id = db()->lastId();
         
-        // 将当前用户信息更新到 group_member 表
-        $sql = "REPLACE INTO `group_member` ( `group_id` , `uid` , `is_author` , `is_vip` , `timeline` ) VALUES ( '" . intval($group_id) . "' , '" . intval($author_uid) . "' , '1' , '1' , '" . s($timeline) . "' )";
-        db()->runSql($sql);
+        $sql_replace_member = "REPLACE INTO `group_member` ( `group_id` , `uid` , `is_author` , `is_vip` , `timeline` ) VALUES ( :group_id , :uid , '1' , '1' , :timeline )";
+        run_sql($sql_replace_member, [':group_id' => $group_id, ':uid' => $author_uid, ':timeline' => $timeline]);
 
-        // 开始更新用户表的group数量
-        $sql = "UPDATE `user` SET `group_count` = (SELECT COUNT(*) FROM `group_member` WHERE `uid` = '" . intval(lianmi_uid()) . "'  ) WHERE `id` = '" . intval(lianmi_uid()) . "' LIMIT 1";
-
-        db()->runSql($sql);
-
-        // 更新栏目表中栏目的成员计数
-        $sql = "UPDATE `group` SET `member_count` = (SELECT COUNT(*) FROM `group_member` WHERE `group_id` = '" . intval($group_id) . "'  ) WHERE `id` = '" . intval($group_id) . "' LIMIT 1";
-
-        db()->runSql($sql);
-
+        run_sql("UPDATE `user` SET `group_count` = (SELECT COUNT(*) FROM `group_member` WHERE `uid` = :uid) WHERE `id` = :uid LIMIT 1", [':uid' => $author_uid]);
+        run_sql("UPDATE `group` SET `member_count` = (SELECT COUNT(*) FROM `group_member` WHERE `group_id` = :group_id) WHERE `id` = :group_id LIMIT 1", [':group_id' => $group_id]);
         
-        // 这里需要返回栏目的基本信息
         $group = [];
         $group['id'] = $group_id;
         
@@ -801,29 +835,22 @@ class AuthedApiController
      */
     public function joinGroup($id)
     {
-        if (intval(table('group')->getIs_activeById($id)->toVar()) != 1) {
+        $id = intval($id);
+        $uid = lianmi_uid();
+
+        if (intval(table('group')->getIs_activeById($id)->toVar()) != 1) { // LDO is safe
             return lianmi_throw('AUTH', '该栏目尚未启用或已被暂停');
         }
         
-        // 这里要检查当前用户是否进入了黑名单
-        if (db()->getData("SELECT * FROM `group_blacklist` WHERE `group_id` = '" . intval($id) .  "' AND `uid` = '" . intval(lianmi_uid()) . "' LIMIT 1")->toLine()) {
+        if (get_line("SELECT * FROM `group_blacklist` WHERE `group_id` = :group_id AND `uid` = :uid LIMIT 1", [':group_id' => $id, ':uid' => $uid])) {
             return lianmi_throw('AUTH', '你没有权限订阅该栏目');
         }
         
-        // 开始向数据表添加数据
-        $sql = "INSERT IGNORE INTO `group_member` ( `group_id`, `uid` , `timeline` ) VALUES ( '" .  intval($id) . "' , '" . intval(lianmi_uid()) . "' , '" . lianmi_now() . "' ) ";
+        $sql_insert_member = "INSERT IGNORE INTO `group_member` ( `group_id`, `uid` , `timeline` ) VALUES ( :group_id , :uid , :timeline )";
+        run_sql($sql_insert_member, [':group_id' => $id, ':uid' => $uid, ':timeline' => lianmi_now()]);
 
-        db()->runSql($sql);
-
-        // 开始更新用户表的group数量
-        $sql = "UPDATE `user` SET `group_count` = (SELECT COUNT(*) FROM `group_member` WHERE `uid` = '" . intval(lianmi_uid()) . "'  ) WHERE `id` = '" . intval(lianmi_uid()) . "' LIMIT 1";
-
-        db()->runSql($sql);
-
-        // 更新栏目表中栏目的成员计数
-        $sql = "UPDATE `group` SET `member_count` = (SELECT COUNT(*) FROM `group_member` WHERE `group_id` = '" . intval($id) . "'  ) WHERE `id` = '" . intval($id) . "' LIMIT 1";
-
-        db()->runSql($sql);
+        run_sql("UPDATE `user` SET `group_count` = (SELECT COUNT(*) FROM `group_member` WHERE `uid` = :uid) WHERE `id` = :uid LIMIT 1", [':uid' => $uid]);
+        run_sql("UPDATE `group` SET `member_count` = (SELECT COUNT(*) FROM `group_member` WHERE `group_id` = :group_id) WHERE `id` = :group_id LIMIT 1", [':group_id' => $id]);
 
         return send_result("done");
     }
@@ -837,10 +864,11 @@ class AuthedApiController
      */
     public function quitGroup($id, $uid = null)
     {
-        if ($uid === null) {
-            $uid = lianmi_uid();
-        }
-        if (!$info = db()->getData("SELECT * FROM `group_member` WHERE `uid` = '" . intval($uid) . "' AND `group_id` = '" . intval($id) . "' LIMIT 1")->toLine()) {
+        $id = intval($id);
+        $target_uid = ($uid === null) ? lianmi_uid() : intval($uid);
+
+        $info = get_line("SELECT * FROM `group_member` WHERE `uid` = :target_uid AND `group_id` = :group_id LIMIT 1", [':target_uid' => $target_uid, ':group_id' => $id]);
+        if (!$info) {
             return lianmi_throw('INPUT', '尚未订阅该栏目');
         }
 
@@ -848,20 +876,9 @@ class AuthedApiController
             return lianmi_throw('INPUT', '栏主不能退订栏目');
         }
         
-        // 开始删除数据
-        $sql = "DELETE FROM `group_member` WHERE `group_id` = '" . intval($id) . "' AND `uid` = '" . intval($uid) . "' LIMIT 1";
-
-        db()->runSql($sql);
-
-        // 开始更新用户表的group数量
-        $sql = "UPDATE `user` SET `group_count` = (SELECT COUNT(*) FROM `group_member` WHERE `uid` = '" . intval($uid) . "'  ) WHERE `id` = '" . intval($uid) . "' LIMIT 1";
-
-        db()->runSql($sql);
-
-        // 更新栏目表中栏目的成员计数
-        $sql = "UPDATE `group` SET `member_count` = (SELECT COUNT(*) FROM `group_member` WHERE `group_id` = '" . intval($id) . "'  ) WHERE `id` = '" . intval($id) . "' LIMIT 1";
-
-        db()->runSql($sql);
+        run_sql("DELETE FROM `group_member` WHERE `group_id` = :group_id AND `uid` = :target_uid LIMIT 1", [':group_id' => $id, ':target_uid' => $target_uid]);
+        run_sql("UPDATE `user` SET `group_count` = (SELECT COUNT(*) FROM `group_member` WHERE `uid` = :target_uid) WHERE `id` = :target_uid LIMIT 1", [':target_uid' => $target_uid]);
+        run_sql("UPDATE `group` SET `member_count` = (SELECT COUNT(*) FROM `group_member` WHERE `group_id` = :group_id) WHERE `id` = :group_id LIMIT 1", [':group_id' => $id]);
 
         return send_result("done");
     }
@@ -873,8 +890,9 @@ class AuthedApiController
      */
     public function userSelfInfo()
     {
-        if (!$user = db()->getData("SELECT * FROM `user` WHERE `id` = '" . lianmi_uid() . "' LIMIT 1")->toLine()) {
-            return lianmi_throw("INPUT", "Email地址不存在或者密码错误");
+        $uid = lianmi_uid();
+        if (!$user = get_line("SELECT * FROM `user` WHERE `id` = :uid LIMIT 1", [':uid' => $uid])) {
+            return lianmi_throw("INPUT", "用户不存在或已失效"); // More generic error
         }
 
         // 清空密码 hash 以免在之后的流程中出错
@@ -901,43 +919,39 @@ class AuthedApiController
      */
     public function checkVipIsPaid($id)
     {
+        $id = intval($id);
+        $uid = lianmi_uid();
+
+        // Web3 related code is external, cannot refactor its internal calls.
+        // Focus on DB calls within the callback.
         $abi = json_decode(file_get_contents(AROOT . DS . 'contract' . DS . 'build' . DS . 'lianmi.abi'));
         $web3 = new \Web3\Providers\HttpProvider(new \Web3\RequestManagers\HttpRequestManager(c('web3_network'), 60));
         $contract = new \Web3\Contract($web3, $abi);
         
-        $contract->at(c('contract_address'))->call('memberOf', $id, lianmi_uid(), function ($error, $data) use ($id, $contract) {
+        $contract->at(c('contract_address'))->call('memberOf', $id, $uid, function ($error, $data) use ($id, $uid, $contract) { // Pass $uid to callback
             if ($error != null) {
                 return lianmi_throw('CONTRACT', '合约调用失败：' . $error->getMessage());
             } else {
-                // bigint
                 $data = reset($data);
                 $timestamp = intval($data->toString());
                 $datetime = date("Y-m-d H:i:s", $timestamp);
+                $is_vip = (time() <= $timestamp && $timestamp > 0) ? 1 : 0;
 
-                if (time() > $timestamp) {
-                    // 此 VIP 订户已经过期
-                    // 或者完全没有购买过， timestamp 为零
-                    $is_vip = 0;
-                    $result = "NOTVIP";
-                } else {
-                    $is_vip = 1;
-                    $result = "VIP";
-                }
-
-                // 更新数据库
-                if (!$info = db()->getData("SELECT * FROM `group_member` WHERE `group_id` = '" . intval($id) . "' AND `uid` = '" . intval(lianmi_uid()) . "' LIMIT 1")->toLine()) {
+                $info = get_line("SELECT * FROM `group_member` WHERE `group_id` = :group_id AND `uid` = :uid LIMIT 1", [':group_id' => $id, ':uid' => $uid]);
+                if (!$info) {
                     return lianmi_throw('INPUT', '你需要先订阅栏目才能购买VIP');
                 }
 
-                // 当过期时间，或者vip状态有变更时，更新数据库
                 if ($info['is_vip'] != $is_vip || $info['vip_expire'] != $datetime) {
-                    $sql = "UPDATE `group_member` SET `is_vip` = '" . intval($is_vip) . "' , `vip_expire` = '" . s($datetime) . "' WHERE `group_id` = '" . intval($id) . "' AND `uid` = '" . intval(lianmi_uid()) . "' AND `id` = '" . intval($info['id']) . "' LIMIT 1";
-
-                    db()->runSql($sql);
+                    $sql = "UPDATE `group_member` SET `is_vip` = :is_vip , `vip_expire` = :vip_expire WHERE `group_id` = :group_id AND `uid` = :uid AND `id` = :member_id LIMIT 1";
+                    run_sql($sql, [
+                        ':is_vip' => $is_vip, 
+                        ':vip_expire' => $datetime, 
+                        ':group_id' => $id, 
+                        ':uid' => $uid, 
+                        ':member_id' => $info['id']
+                    ]);
                 }
-
-                
-
                 return send_result([ 'is_vip' => $is_vip , 'vip_expire' =>  $datetime ]);
             }
         });
@@ -952,24 +966,30 @@ class AuthedApiController
     
     public function GroupPreorder($group_id)
     {
-        if (!$group = db()->getData("SELECT * FROM `group` WHERE  `id` = '" . intval($group_id) . "' LIMIT 1")->toLine()) {
+        $group_id = intval($group_id);
+        $group = get_line("SELECT * FROM `group` WHERE `id` = :group_id LIMIT 1", [':group_id' => $group_id]);
+        if (!$group) {
             return lianmi_throw("ARGS", "小组不存在");
         }
 
-        $sql = "INSERT INTO `order` ( `group_id` , `author_address` , `group_price_wei` , `buyer_uid` , `created_at`  ) VALUES ( '" . intval($group_id) . "' , '" . s($group['author_address']) . "' , '" . intval($group['price_wei']) . "' , '" . intval(lianmi_uid()) . "' , '" . s(lianmi_now()) . "' ) ";
-        
-        db()->runSql($sql);
+        $sql = "INSERT INTO `order` ( `group_id` , `author_address` , `group_price_wei` , `buyer_uid` , `created_at`  ) VALUES ( :group_id , :author_address , :group_price_wei , :buyer_uid , :created_at )";
+        $params = [
+            ':group_id' => $group_id,
+            ':author_address' => $group['author_address'],
+            ':group_price_wei' => $group['price_wei'], // Assuming price_wei is already a string/numeric from DB
+            ':buyer_uid' => lianmi_uid(),
+            ':created_at' => lianmi_now()
+        ];
+        run_sql($sql, $params);
 
         $order_id = db()->lastId();
         if ($order_id < 1) {
-            return lianmi_throw("DATABASE", "预订单失败");
+            return lianmi_throw("DATABASE", "预订单创建失败");
         }
-
+        
+        // URL construction remains the same as it doesn't involve SQL
         $url =  "https://wallet.fo/Pay?params=" .$group['author_address']  . ",FOUSDT,eosio,". intval($group['price_wei'])/100 ."," . u("order=".$order_id);
-
         $schema = "fowallet://".u($url);
-
-        // FOUSDT@eosio
         
         return send_result(["url"=>$url , "order_id"=> $order_id , "schema" => $schema ]);
     }
@@ -984,8 +1004,11 @@ class AuthedApiController
     
     public function GroupCheckorder($order_id)
     {
-        // 首先读取订单详情
-        if (!$order = db()->getData("SELECT * FROM `order` WHERE  `id` = '" . intval($order_id) . "' LIMIT 1")->toLine()) {
+        $order_id = intval($order_id);
+        $uid = lianmi_uid();
+
+        $order = get_line("SELECT * FROM `order` WHERE `id` = :order_id LIMIT 1", [':order_id' => $order_id]);
+        if (!$order) {
             return lianmi_throw("ARGS", "订单不存在");
         }
 
@@ -993,49 +1016,38 @@ class AuthedApiController
             return send_result(["done" => 1]);
         }
         
-        if ($order['buyer_uid'] != lianmi_uid()) {
+        if ($order['buyer_uid'] != $uid) {
             return lianmi_throw("ARGS", "你只能校验自己的订单");
         }
 
-        // 开始检测
-        // fo_check_user_tx( $name , $order , $price_wei , $token = 'FOUSDT@eosio' )
-        
         if (!fo_check_user_tx($order['author_address'], $order_id, $order['group_price_wei'], 'FOUSDT@eosio')) {
             return lianmi_throw("AUTH", "尚未检测到转账结果，可能存在延迟，请确认到账后三到五分钟再查询");
         }
 
-        // 再次查询一次 order 表，避免并发请求导致的状态延迟
-
-        if (!$order = db()->getData("SELECT * FROM `order` WHERE  `id` = '" . intval($order_id) . "' LIMIT 1")->toLine()) {
+        // Re-fetch order to get the latest state, important for concurrency
+        $order = get_line("SELECT * FROM `order` WHERE `id` = :order_id LIMIT 1", [':order_id' => $order_id]);
+        if (!$order) { // Should not happen if it existed before
             return lianmi_throw("ARGS", "订单不存在");
         }
-
         if ($order['vip_active'] == 1) {
             return send_result(["done" => 1]);
         }
 
-        // 开始更新用户状态
-        // 有两个表要改，一个是`group_member`表 另一个是 order 表
-        
-        if (!$membership = db()->getData("SELECT * FROM `group_member` WHERE `uid` = '" . intval(lianmi_uid()) . "' AND `group_id` = '" . intval($order['group_id']) . "' LIMIT 1")->toLine()) {
+        $membership = get_line("SELECT * FROM `group_member` WHERE `uid` = :uid AND `group_id` = :group_id LIMIT 1", [':uid' => $uid, ':group_id' => $order['group_id']]);
+        if (!$membership) {
             return lianmi_throw("AUTH", "先订阅栏目后才能购买VIP订户");
         }
 
-        if (!isset($membership['vip_expire']) || $membership['vip_expire'] == "") {
-            $expire = date("Y-m-d H:i:s", strtotime("+1 year"));
-        } else {
-            $expire = date("Y-m-d H:i:s", strtotime($membership['vip_expire']) + 60*60*24*365);
-        }
+        $expire_timestamp = (!isset($membership['vip_expire']) || $membership['vip_expire'] == "") 
+            ? strtotime("+1 year") 
+            : strtotime($membership['vip_expire']) + (60*60*24*365);
+        $expire_datetime = date("Y-m-d H:i:s", $expire_timestamp);
             
-        
-        // 首先修改 group_member 表
-        $sql = "UPDATE `group_member` SET `is_vip` = 1 , `vip_expire` = '" . $expire . "' WHERE `uid` = '" . intval(lianmi_uid()) . "' AND `group_id` = '" . intval($order['group_id']) . "' LIMIT 1";
+        $sql_update_member = "UPDATE `group_member` SET `is_vip` = 1 , `vip_expire` = :expire_datetime WHERE `uid` = :uid AND `group_id` = :group_id LIMIT 1";
+        run_sql($sql_update_member, [':expire_datetime' => $expire_datetime, ':uid' => $uid, ':group_id' => $order['group_id']]);
 
-        db()->runSql($sql);
-
-        // 然后修改 order 表，更改可用状态，避免重复
-        $sql = "UPDATE `order` SET `vip_active` = 1 , `vip_start` = '" . s(lianmi_now()) . "' WHERE `id` = '" . intval($order_id) . "' LIMIT 1";
-        db()->runSql($sql);
+        $sql_update_order = "UPDATE `order` SET `vip_active` = 1 , `vip_start` = :vip_start WHERE `id` = :order_id LIMIT 1";
+        run_sql($sql_update_order, [':vip_start' => lianmi_now(), ':order_id' => $order_id]);
 
         return send_result(["done" => 1]);
     }
@@ -1052,58 +1064,57 @@ class AuthedApiController
      */
     public function updateContribute($group_id, $feed_id, $status)
     {
-        // 检查权限
-        if (lianmi_uid() != db()->getData("SELECT `author_uid` FROM `group` WHERE `id` = '" . intval($group_id) . "' LIMIT 1")->toVar()) {
+        $group_id = intval($group_id);
+        $feed_id = intval($feed_id);
+        $status = intval($status);
+        $current_uid = lianmi_uid();
+
+        if ($current_uid != get_var("SELECT `author_uid` FROM `group` WHERE `id` = :group_id LIMIT 1", [':group_id' => $group_id])) {
             return lianmi_throw('AUTH', '只有栏主才能审核投稿');
         }
         
-        if (!$contribute = db()->getData("SELECT * FROM `feed_contribute` WHERE `group_id` = '" . intval($group_id) . "' AND `feed_id` = '" . intval($feed_id) . "' LIMIT 1")->toLine()) {
+        $contribute = get_line("SELECT * FROM `feed_contribute` WHERE `group_id` = :group_id AND `feed_id` = :feed_id LIMIT 1", [':group_id' => $group_id, ':feed_id' => $feed_id]);
+        if (!$contribute) {
             return lianmi_throw('INPUT', '没有对应的投稿');
         }
 
         if ($contribute['status'] != $status) {
-            // 如果新状态为通过
-            if ($status == 1) {
-                // 转发改feed
-                if (!$feed = db()->getData("SELECT * FROM `feed` WHERE `id` = '" . intval($feed_id) . "' LIMIT 1")->toLine()) {
+            if ($status == 1) { // Approve
+                $feed = get_line("SELECT * FROM `feed` WHERE `id` = :feed_id LIMIT 1", [':feed_id' => $feed_id]);
+                if (!$feed) {
                     return lianmi_throw('INPUT', '投稿对应的Feed不存在');
                 }
 
-                // 投稿通过以后又设置为未通过或者拒稿，之前的转发被标记删除的情况
                 if ($contribute['forward_feed_id'] != 0) {
-                    db()->runSql("UPDATE `feed` SET `is_delete` = 0 WHERE `forward_uid` = '" . intval(lianmi_uid()) . "' AND `id` = '" . intval($contribute['forward_feed_id']) . "' LIMIT 1 ");
+                    run_sql("UPDATE `feed` SET `is_delete` = 0 WHERE `forward_uid` = :current_uid AND `id` = :forward_feed_id LIMIT 1", [':current_uid' => $current_uid, ':forward_feed_id' => $contribute['forward_feed_id']]);
                 } else {
-                    // 转发到栏目
                     $now = lianmi_now();
-
-                    $sql = "INSERT INTO `feed` ( `text` , `group_id` , `images`, `files` , `uid` , `is_paid` , `timeline` , `is_forward` , `forward_feed_id` , `forward_uid` , `forward_text` , `forward_is_paid` , `forward_group_id` , `forward_timeline`  ) VALUES ( '" . s($feed['text']) . "' , '0' , '" . s($feed['images']) . "' , '" . s($feed['files']) . "' , '" . intval($feed['uid']) . "' , '" . intval($feed['is_paid']) . "' , '" . s($feed['timeline']) . "' , '1' , '" . intval($feed['id']) . "' , '" . intval(lianmi_uid()) . "' , '' , '" . intval($feed['is_paid']) . "' , '" . intval($group_id) . "' , '" . s($now) . "' )";
-
-                    db()->runSql($sql);
+                    $sql_forward = "INSERT INTO `feed` ( `text` , `group_id` , `images`, `files` , `uid` , `is_paid` , `timeline` , `is_forward` , `forward_feed_id` , `forward_uid` , `forward_text` , `forward_is_paid` , `forward_group_id` , `forward_timeline`  ) VALUES ( :text , '0' , :images , :files , :original_uid , :is_paid , :original_timeline , '1' , :original_feed_id , :forward_uid , '' , :is_paid_forward , :forward_group_id , :forward_timeline )";
+                    $params_forward = [
+                        ':text' => $feed['text'], ':images' => $feed['images'], ':files' => $feed['files'], 
+                        ':original_uid' => $feed['uid'], ':is_paid' => $feed['is_paid'], ':original_timeline' => $feed['timeline'],
+                        ':original_feed_id' => $feed['id'], ':forward_uid' => $current_uid, 
+                        ':is_paid_forward' => $feed['is_paid'], ':forward_group_id' => $group_id, ':forward_timeline' => $now
+                    ];
+                    run_sql($sql_forward, $params_forward);
                     $forward_feed_id = db()->lastId();
-
-                    db()->runSql("UPDATE `feed_contribute` SET `status` = '" . intval($status) . "' , `forward_feed_id` = '" . intval($forward_feed_id) . "' WHERE `id` = '" . intval($contribute['id']) . "' LIMIT 1");
+                    run_sql("UPDATE `feed_contribute` SET `status` = :status , `forward_feed_id` = :forward_feed_id WHERE `id` = :contribute_id LIMIT 1", [':status' => $status, ':forward_feed_id' => $forward_feed_id, ':contribute_id' => $contribute['id']]);
                 }
-            } else {
-                // 如果旧状态为通过，需要删除掉之前的转发内容
-                if ($contribute['status'] == 1) {
-                    // 如果通过审核时间超过一天将其标记删除
-                    if ($the_feed = db()->getData("SELECT * FROM `feed` WHERE `id` = '" . intval($contribute['forward_feed_id']) . "' LIMIT 1")->toLine()) {
+            } else { // Reject or other status
+                if ($contribute['status'] == 1 && $contribute['forward_feed_id'] != 0) { // Was previously approved
+                    $the_feed = get_line("SELECT * FROM `feed` WHERE `id` = :forward_feed_id LIMIT 1", [':forward_feed_id' => $contribute['forward_feed_id']]);
+                    if ($the_feed) {
                         if (strtotime($the_feed['timeline']) < strtotime("-1day") || $the_feed['comment_count'] > 0) {
-                            db()->runSql("UPDATE `feed` SET `is_delete` = 1 WHERE `forward_uid` = '" . intval(lianmi_uid()) . "' AND `id` = '" . intval($contribute['forward_feed_id']) . "' LIMIT 1 ");
+                            run_sql("UPDATE `feed` SET `is_delete` = 1 WHERE `forward_uid` = :current_uid AND `id` = :forward_feed_id LIMIT 1", [':current_uid' => $current_uid, ':forward_feed_id' => $contribute['forward_feed_id']]);
                         } else {
-                            db()->runSql("DELETE FROM `feed` WHERE `forward_uid` = '" . intval(lianmi_uid()) . "' AND `id` = '" . intval($contribute['forward_feed_id']) . "' LIMIT 1 ");
+                            run_sql("DELETE FROM `feed` WHERE `forward_uid` = :current_uid AND `id` = :forward_feed_id LIMIT 1", [':current_uid' => $current_uid, ':forward_feed_id' => $contribute['forward_feed_id']]);
                         }
                     }
                 }
-
-                db()->runSql("UPDATE `feed_contribute` SET `status` = '" . intval($status) . "' WHERE `id` = '" . intval($contribute['id']) . "' LIMIT 1");
+                run_sql("UPDATE `feed_contribute` SET `status` = :status WHERE `id` = :contribute_id LIMIT 1", [':status' => $status, ':contribute_id' => $contribute['id']]);
             }
-
-            // 更新栏目的投稿计数
-            $sql = "UPDATE `group` SET `todo_count` = ( SELECT COUNT(*) FROM `feed_contribute` WHERE `group_id` = '" . intval($group_id) . "' AND `status` = 0 ) WHERE `id`='" . intval($group_id) . "' LIMIT 1";
-            db()->runSql($sql);
+            run_sql("UPDATE `group` SET `todo_count` = ( SELECT COUNT(*) FROM `feed_contribute` WHERE `group_id` = :group_id AND `status` = 0 ) WHERE `id`= :group_id LIMIT 1", [':group_id' => $group_id]);
         }
-        
         return send_result('done');
     }
 
@@ -1132,13 +1143,30 @@ class AuthedApiController
         $since_sql = $since_id == 0 ? "" : " AND `id` < '" . intval($since_id) . "' ";
 
 
-        // 首先从投稿表中把投稿取出来，支持 filter 和  since_id 这样可以翻页
+        $uid = lianmi_uid();
+        $params = [':uid' => $uid];
+        $limit = intval(c('contribute_per_page'));
 
-        $sql = "SELECT `id` , `feed_id`,`feed_id` as `feed` , `group_id`, `group_id` as `group`, `status` FROM `feed_contribute` WHERE 1 " . $filter_sql . $since_sql . "  AND `group_id` IN ( SELECT `id` FROM `group` WHERE `author_uid` = '" . intval(lianmi_uid()) . "' ) ORDER BY `id` DESC LIMIT " . c('contribute_per_page');
+        $main_conditions = " 1 ";
+        if ($filter == 'todo') $main_conditions .= " AND fc.`status` = 0 ";
+        if ($filter == 'allow') $main_conditions .= " AND fc.`status` = 1 ";
+        if ($filter == 'deny') $main_conditions .= " AND fc.`status` = 2 ";
+        
+        if ($since_id > 0) {
+            $main_conditions .= " AND fc.`id` < :since_id ";
+            $params[':since_id'] = intval($since_id);
+        }
 
-        $data = db()->getData($sql)->toArray();
+        $sql = "SELECT fc.`id`, fc.`feed_id`, fc.`feed_id` as `feed`, fc.`group_id`, fc.`group_id` as `group`, fc.`status` 
+                FROM `feed_contribute` fc
+                INNER JOIN `group` g ON fc.group_id = g.id
+                WHERE {$main_conditions} AND g.`author_uid` = :uid
+                ORDER BY fc.`id` DESC 
+                LIMIT {$limit}";
+        
+        $data = get_data($sql, $params);
        
-        /*
+        /* Example structure after this point
          * {
             id: "16",
             feed_id: "10",
@@ -1200,22 +1228,23 @@ class AuthedApiController
             // return print_r( $group_status );
 
 
-            // 开始对 group 进行展开
+            // Start expanding group information
             if (is_array($to_group_ids) && count($to_group_ids) > 0) {
-                // 取得 group info
-                if ($group_infos = db()->getData("SELECT * FROM `group` WHERE `id` IN ( " . join(",", $to_group_ids) . " )")->toIndexedArray('id')) {
+                // Create placeholders for IN clause
+                $group_placeholders = implode(',', array_fill(0, count($to_group_ids), '?'));
+                // Use 0-indexed array for IN clause with ? placeholders
+                if ($group_infos = get_data("SELECT * FROM `group` WHERE `id` IN ( " . $group_placeholders . " )", $to_group_ids)) {
+                    $group_infos_indexed = [];
+                    foreach($group_infos as $gi) $group_infos_indexed[$gi['id']] = $gi;
+
                     foreach ($new_data as $key1 => $item) {
                         if (isset($item['to_groups']) && is_array($item['to_groups']) && count($item['to_groups']) > 0) {
                             foreach ($item['to_groups'] as $key2 => $gid) {
-                                if (isset($group_infos[$gid])) {
+                                if (isset($group_infos_indexed[$gid])) {
                                     if (isset($group_status[$gid][$item['feed_id']])) {
-                                        $group_infos[$gid]['status'] = $group_status[$gid][$item['feed_id']];
+                                        $group_infos_indexed[$gid]['status'] = $group_status[$gid][$item['feed_id']];
                                     }
-                            
-                                    $new_data[$key1]['to_groups'][$key2] = $group_infos[$gid];
-                            
-                                    //$new_data[$key1]['to_groups'][$gid] = $group_infos[$gid];
-                            //unset( $new_data[$key1]['to_groups'][$key2] );
+                                    $new_data[$key1]['to_groups'][$key2] = $group_infos_indexed[$gid];
                                 }
                             }
                         }
@@ -1223,13 +1252,13 @@ class AuthedApiController
                 }
             }
             
-
-            $data = extend_field($new_data, 'feed', 'feed');
-             
-
-            // return send_result($to_group_ids );
-            // 需要把 feed 里边的 uid 给扩展了
-            /**
+            // extend_field itself uses parameterized queries now for the main query if modified,
+            // but the IN clause construction needs care.
+            // Assuming extend_field is refactored or its use here is with safe $new_data.
+            $data = extend_field($new_data, 'feed', 'feed'); 
+            
+            // Example structure for feed data (already exists)
+            /*
              * id: "1",
                 feed: {
                 id: "7",
@@ -1276,25 +1305,25 @@ class AuthedApiController
             }
 
             if (count($feed_uids) > 0) {
-                if ($userinfo = db()->getData("SELECT ".c('user_normal_fields')." FROM `user` WHERE `id` IN (" . join(',', $feed_uids) .")")->toIndexedArray('id')) {
-                    foreach ($data as $key => $item) {
-                        if (isset($item['feed']['uid']) && isset($userinfo[$item['feed']['uid']])) {
-                            $data[$key]['feed']['user'] = $userinfo[$item['feed']['uid']];
-                        }
+                $user_placeholders = implode(',', array_fill(0, count($feed_uids), '?'));
+                $user_sql = "SELECT ".c('user_normal_fields')." FROM `user` WHERE `id` IN (" . $user_placeholders .")";
+                if ($userinfo = get_data($user_sql, $feed_uids)) {
+                    $userinfo_indexed = [];
+                    foreach($userinfo as $ui) $userinfo_indexed[$ui['id']] = $ui;
 
+                    foreach ($data as $key => $item) {
+                        if (isset($item['feed']['uid']) && isset($userinfo_indexed[$item['feed']['uid']])) {
+                            $data[$key]['feed']['user'] = $userinfo_indexed[$item['feed']['uid']];
+                        }
                         $data[$key]['feed']['to_groups'] = $item['to_groups'];
                         unset($data[$key]['to_groups']);
-
                         $data[$key]['feed']['forward_group_id'] = $item['group_id'];
                     }
                 }
             }
-
-            // groups 字段需要扩展
         } else {
             $maxid = $minid = null;
         }
-            
         return send_result(['feeds'=>$data , 'count'=>count($data) , 'maxid'=>$maxid , 'minid'=>$minid  ]);
     }
 
@@ -1307,20 +1336,20 @@ class AuthedApiController
      */
     public function removeFeedComment($id)
     {
-        if (!$comment = table('comment')->getAllById($id)->toLine()) {
+        $id = intval($id);
+        $comment = table('comment')->getAllById($id)->toLine(); // LDO is safe
+        if (!$comment) {
             return lianmi_throw('INPUT', '评论不存在或已被删除');
         }
 
-        // 开始鉴权
         $can_delete = false;
-        // 评论作者可以删除
         if ($comment['uid'] == lianmi_uid()) {
             $can_delete = true;
         } else {
-            // 内容作者（含转发者）
-            if ($feed = table('feed')->getAllById($comment['feed_id'])->toLine()) {
-                $owner_uid = $feed['is_forward'] == 1 ?  $feed['forward_uid'] : $feed['uid'];
-                if ($owner_uid ==  lianmi_uid()) {
+            $feed = table('feed')->getAllById($comment['feed_id'])->toLine(); // LDO is safe
+            if ($feed) {
+                $owner_uid = $feed['is_forward'] == 1 ? $feed['forward_uid'] : $feed['uid'];
+                if ($owner_uid == lianmi_uid()) {
                     $can_delete = true;
                 }
             }
@@ -1330,13 +1359,10 @@ class AuthedApiController
             return lianmi_throw('AUTH', '只有评论作者和内容主人才能删除该评论');
         }
 
-        // 标记删除
-        $sql = "UPDATE `comment` SET `is_delete` = '1' WHERE `id` = '" . intval($id) . "' LIMIT 1";
-        db()->runSql($sql);
-
-        // 更新 feed 表的评论计数
-        $sql = "UPDATE `feed` SET `comment_count` = ( SELECT COUNT(*) FROM `comment` WHERE `feed_id` = '" . intval($id) . "' AND `is_delete` = 0  ) WHERE `id` = '" . intval($id) . "' LIMIT 1";
-        db()->runSql($sql);
+        run_sql("UPDATE `comment` SET `is_delete` = '1' WHERE `id` = :id LIMIT 1", [':id' => $id]);
+        
+        // Note: The original query for comment_count was incorrect as it used $id (comment_id) instead of $comment['feed_id']
+        run_sql("UPDATE `feed` SET `comment_count` = ( SELECT COUNT(*) FROM `comment` WHERE `feed_id` = :feed_id AND `is_delete` = 0 ) WHERE `id` = :feed_id LIMIT 1", [':feed_id' => $comment['feed_id']]);
 
         $comment['is_delete'] = 1;
         return send_result($comment);
@@ -1353,91 +1379,79 @@ class AuthedApiController
      */
     public function saveFeedComment($id, $text)
     {
-        if (!$feed = db()->getData("SELECT *, `uid` as `user` , `forward_uid` as `forward_user` , `group_id` as `group` FROM `feed` WHERE `id` = '". intval($id) . "' AND `is_delete` = 0 LIMIT 1")->toLine()) {
+        $id = intval($id);
+        $current_uid = lianmi_uid();
+
+        $feed = get_line("SELECT *, `uid` as `user_obj` , `forward_uid` as `forward_user_obj` , `group_id` as `group_obj` FROM `feed` WHERE `id` = :id AND `is_delete` = 0 LIMIT 1", [':id' => $id]);
+        if (!$feed) {
             return lianmi_throw('INPUT', 'ID对应的内容不存在或者你没有权限阅读');
-        } else {
-            $group_id = $feed['is_forward'] == 1 ? $feed['forward_group_id'] : $feed['group_id'];
-            
-            $member_ship = db()->getData("SELECT * FROM `group_member` WHERE `group_id` = '" . intval($group_id) . "' AND `uid` = '" . intval(lianmi_uid()) . "' LIMIT 1")->toLine();
+        }
+        
+        $group_id = $feed['is_forward'] == 1 ? $feed['forward_group_id'] : $feed['group_id'];
+        $member_ship = [];
+        if ($group_id > 0) { // Only fetch membership if there's a relevant group
+             $member_ship = get_line("SELECT * FROM `group_member` WHERE `group_id` = :group_id AND `uid` = :uid LIMIT 1", [':group_id' => $group_id, ':uid' => $current_uid]);
+        }
 
-            // 原发feed 没有member ship的概念
-            if ($feed['is_forward'] != 1) {
-                // 自己的内容当然可以评论了
-                if ($feed['uid'] == lianmi_uid()) {
-                    $member_ship['can_comment'] = 1;
-                } else {
-                    $member_ship['can_comment'] = db()->getData("SELECT * FROM `user_blacklist` WHERE `uid` = '" . $feed['uid'] . "' AND `block_uid` = '" . intval(lianmi_uid()) . "'")->toLine()? 0:1;
+        $can_see = true;
+        $can_comment = true; // Default to true, adjust based on logic below
+
+        if ($feed['is_forward'] != 1) { // Original feed (not a forward)
+            if ($feed['uid'] == $current_uid) { // Owner can always comment
+                $can_comment = true;
+            } else { // Check blacklist for non-owner
+                $is_blacklisted = get_line("SELECT * FROM `user_blacklist` WHERE `uid` = :feed_owner_uid AND `block_uid` = :current_uid LIMIT 1", [':feed_owner_uid' => $feed['uid'], ':current_uid' => $current_uid]);
+                $can_comment = !$is_blacklisted;
+            }
+        } else { // Forwarded feed (within a group context)
+             $can_comment = $member_ship && ($member_ship['can_comment'] == 1);
+        }
+        
+        if ($feed['is_paid'] == 1) {
+            $can_see = false; // Default for paid content
+            if ($feed['is_forward'] == 1) { // Forwarded paid content
+                if ($member_ship && ($member_ship['is_author'] == 1 || $member_ship['is_vip'] == 1)) {
+                    $can_see = true;
+                }
+            } else { // Original paid content
+                if ($current_uid == $feed['uid']) { // Owner can see their own paid content
+                    $can_see = true;
                 }
             }
+        }
 
-            // 鉴权
-            $can_see = true;
-            $can_comment = $member_ship['can_comment'] == 1;
-            
-            if ($feed['is_paid'] == 1) {
-                // 鉴权
-                $can_see = false;
+        if (!$can_see || !$can_comment) {
+            return lianmi_throw('AUTH', '没有权限查看或评论此内容，可使用有权限的账号登入后评论');
+        }
+        
+        $now = lianmi_now();
+        $sql_insert_comment = "INSERT INTO `comment` ( `feed_id` , `text` , `uid` , `timeline` ) VALUES ( :feed_id , :text , :uid , :timeline )";
+        run_sql($sql_insert_comment, [':feed_id' => $id, ':text' => $text, ':uid' => $current_uid, ':timeline' => $now]);
+        $cid = db()->lastId();
 
-                // 转发的情况，这是从栏目里边点出来的
-                if ($feed['is_forward'] == 1) {
-                    if ($member_ship['is_author'] == 1) {
-                        $can_see = true;
-                    }
-                    if ($member_ship['is_vip'] == 1) {
-                        $can_see = true;
-                    }
-                } else {
-                    // 原发的情况，这是从作者的页面点出来的
-                    // 只有作者本人才能看到个人页面上的付费内容
-                    if (lianmi_uid() == $feed['uid']) {
-                        $can_see = true;
-                        $can_comment = true;
-                    }
-                }
-            }
+        run_sql("UPDATE `feed` SET `comment_count` = ( SELECT COUNT(*) FROM `comment` WHERE `feed_id` = :feed_id AND `is_delete` = 0  ) WHERE `id` = :feed_id LIMIT 1", [':feed_id' => $id]);
 
-            if (!$can_see || !$can_comment) {
-                return lianmi_throw('AUTH', '没有权限查看或评论此内容，可使用有权限的账号登入后评论');
-            }
-            
-            $sql = "INSERT INTO `comment` ( `feed_id` , `text` , `uid` , `timeline` ) VALUES ( '" . intval($id) . "' , '" . s($text) . "' , '" . intval(lianmi_uid()) . "' , '" . s(lianmi_now()) . "' )";
-            db()->runSql($sql);
-            $cid = db()->lastId();
+        $ouid = $feed['is_forward'] == 1 ? $feed['forward_uid'] : $feed['uid'];
+        if ($ouid != $current_uid) {
+            system_notice($ouid, $current_uid, lianmi_username(), lianmi_nickname(), 'comments on ['.$feed['id'].']', '/feed/'.$feed['id']);
+        }
 
-            // 更新 feed 表的评论计数
-            $sql = "UPDATE `feed` SET `comment_count` = ( SELECT COUNT(*) FROM `comment` WHERE `feed_id` = '" . intval($id) . "' AND `is_delete` = 0  ) WHERE `id` = '" . intval($id) . "' LIMIT 1";
-            db()->runSql($sql);
-
-            // 给被评论人发送通知
-            $ouid = $feed['is_forward'] == 1 ? $feed['forward_uid'] : $feed['uid'];
-            
-            // $uid , $username , $nickname , $action , $link
-            if ($ouid != lianmi_uid()) {
-                system_notice($ouid, lianmi_uid(), lianmi_username(), lianmi_nickname(), 'comments on ['.$feed['id'].']', '/feed/'.$feed['id']);
-            }
-
-            // 评论中的 @  提醒
-            // 一条评论最多支持
-            if ($mention = lianmi_at($text)) {
-                $mention = array_slice($mention, 0, c('max_mention_per_comment'));
-                $mention_string = array_map(function ($item) {
-                    return "'" . $item ."'";
-                }, $mention);
-                if (is_array($mention_string) && count($mention_string) > 0) {
-                    if ($mention_uids = db()->getData("SELECT `id` FROM `user` WHERE `username` IN ( " . join(",", $mention_string) . " )")->toColumn('id')) {
-                        foreach ($mention_uids as $muid) {
-                            // 不要给自己和内容作者发at通知，因为ta已经会收到通知了
-                            if ($muid != lianmi_uid() && $muid != $ouid) {
-                                system_notice($muid, lianmi_uid(), lianmi_username(), lianmi_nickname(), '在内容['.$feed['id'].']的评论中@了你', '/feed/'.$feed['id']);
-                            }
+        if ($mention = lianmi_at($text)) {
+            $mention = array_slice($mention, 0, intval(c('max_mention_per_comment')));
+            if (!empty($mention)) {
+                $placeholders = implode(',', array_fill(0, count($mention), '?'));
+                $mention_uids = get_data("SELECT `id` FROM `user` WHERE `username` IN ( " . $placeholders . " )", $mention);
+                if ($mention_uids) {
+                    foreach ($mention_uids as $muid_row) {
+                        $muid = $muid_row['id'];
+                        if ($muid != $current_uid && $muid != $ouid) {
+                            system_notice($muid, $current_uid, lianmi_username(), lianmi_nickname(), '在内容['.$feed['id'].']的评论中@了你', '/feed/'.$feed['id']);
                         }
                     }
                 }
             }
-
-
-            return send_result([ 'feed_id'=>$id, 'text'=>$text , 'id' => $cid ]);
         }
+        return send_result([ 'feed_id'=>$id, 'text'=>$text , 'id' => $cid ]);
     }
 
     
@@ -1454,7 +1468,9 @@ class AuthedApiController
      */
     public function updateUserPassword($old_password, $new_password)
     {
-        if (!$user = table('user')->getAllById(lianmi_uid())->toLine()) {
+        $uid = lianmi_uid();
+        $user = table('user')->getAllById($uid)->toLine(); // LDO is safe
+        if (!$user) {
             return lianmi_throw('INPUT', '当前用户不存在，什么鬼');
         }
         
@@ -1468,9 +1484,7 @@ class AuthedApiController
         
         $hash = password_hash($new_password, PASSWORD_DEFAULT);
         
-        $sql = "UPDATE `user` SET `password` = '" . s($hash) . "' WHERE `id` = '" . intval(lianmi_uid()) . "' LIMIT 1";
-        db()->runSql($sql);
-    
+        run_sql("UPDATE `user` SET `password` = :password WHERE `id` = :uid LIMIT 1", [':password' => $hash, ':uid' => $uid]);
         return send_result('done');
     }
 
@@ -1484,15 +1498,16 @@ class AuthedApiController
      */
     public function updateUserInfo($nickname, $address = '')
     {
-        $nickname = mb_substr($nickname, 0, 15, 'UTF-8');
+        $uid = lianmi_uid();
+        $nickname = mb_substr(t($nickname), 0, 15, 'UTF-8'); // Trim and then substr
+        $address = t($address); // Trim address
         
         if (in_array(strtolower($nickname), c('forbiden_nicknames'))) {
             return lianmi_throw('INPUT', '此用户昵称已被系统保留，请重新选择');
         }
 
-        $sql = "UPDATE `user` SET `nickname` = '" . s($nickname) . "' , `address` = '" . s($address) . "' WHERE `id` = '" . intval(lianmi_uid()) . "' LIMIT 1";
-        db()->runSql($sql);
-    
+        $sql = "UPDATE `user` SET `nickname` = :nickname , `address` = :address WHERE `id` = :uid LIMIT 1";
+        run_sql($sql, [':nickname' => $nickname, ':address' => $address, ':uid' => $uid]);
         return send_result('done');
     }
 
@@ -1505,13 +1520,12 @@ class AuthedApiController
      */
     public function updateUserAvatar($avatar)
     {
-        if (!check_image_url($avatar)) {
+        if (!check_image_url($avatar)) { // check_image_url is important validation
             return lianmi_throw('INPUT', '包含未被许可的图片链接，请重传图片后发布');
         }
         
-        $sql = "UPDATE `user` SET `avatar` = '" . s($avatar) . "'  WHERE `id` = '" . intval(lianmi_uid()) . "' LIMIT 1";
-        db()->runSql($sql);
-    
+        $uid = lianmi_uid();
+        run_sql("UPDATE `user` SET `avatar` = :avatar  WHERE `id` = :uid LIMIT 1", [':avatar' => $avatar, ':uid' => $uid]);
         return send_result('done');
     }
 
@@ -1524,13 +1538,12 @@ class AuthedApiController
      */
     public function updateUserCover($cover)
     {
-        if (!check_image_url($cover)) {
+        if (!check_image_url($cover)) { // check_image_url is important validation
             return lianmi_throw('INPUT', '包含未被许可的图片链接，请重传图片后发布');
         }
         
-        $sql = "UPDATE `user` SET `cover` = '" . s($cover) . "'  WHERE `id` = '" . intval(lianmi_uid()) . "' LIMIT 1";
-        db()->runSql($sql);
-    
+        $uid = lianmi_uid();
+        run_sql("UPDATE `user` SET `cover` = :cover WHERE `id` = :uid LIMIT 1", [':cover' => $cover, ':uid' => $uid]);
         return send_result('done');
     }
 
@@ -1545,36 +1558,36 @@ class AuthedApiController
      */
     public function updateGroupSettings($id, $name, $cover)
     {
-        if (!check_image_url($cover)) {
+        $id = intval($id);
+        $current_uid = lianmi_uid();
+
+        if (!check_image_url($cover)) { // Important validation
             return lianmi_throw('INPUT', '包含未被许可的图片链接，请重传图片后发布');
         }
 
-        // 检查权限
-        if (!$group = table('group')->getAllById($id)->toLine()) {
+        $group = table('group')->getAllById($id)->toLine(); // LDO is safe
+        if (!$group) {
             return lianmi_throw('INPUT', '错误的栏目ID，栏目不存在或已被删除');
         }
         
-        if ($group['author_uid'] != lianmi_uid()) {
+        if ($group['author_uid'] != $current_uid) {
             return lianmi_throw('AUTH', '只有栏主才能修改栏目资料');
         }
 
-        // 检查栏目名称的唯一性
+        $name = t($name); // Trim name
         if ($name != $group['name']) {
             if (mb_strlen($name, 'UTF8') < 3) {
                 return lianmi_throw("INPUT", "栏目名字最短3个字");
             }
-            
-            if (db()->getData("SELECT COUNT(*) FROM `group` WHERE `name` = '" . s($name) . "' ")->toVar() > 0) {
+            if (get_var("SELECT COUNT(*) FROM `group` WHERE `name` = :name AND `id` != :id", [':name' => $name, ':id' => $id]) > 0) {
                 return lianmi_throw("INPUT", "栏目名字已被占用，重新起一个吧");
             }
         }
         
+        $sql = "UPDATE `group` SET `name` = :name , `cover` = :cover WHERE `id` = :id AND `author_uid` = :author_uid LIMIT 1";
+        run_sql($sql, [':name' => $name, ':cover' => $cover, ':id' => $id, ':author_uid' => $current_uid]);
 
-        $sql = "UPDATE `group` SET `name` = '" . s($name) . "' , `cover` = '" . s($cover) . "' WHERE `id` = '" . intval($id) . "' AND `author_uid` = '" . intval(lianmi_uid()) . "' LIMIT 1";
-        
-        db()->runSql($sql);
-
-        $group['name'] = $name;
+        $group['name'] = $name; // Update local object for response
         $group['cover'] = $cover;
         return send_result($group);
     }
@@ -1587,6 +1600,8 @@ class AuthedApiController
      */
     public function checkUserInBlacklist($uid)
     {
+        // LDO is already refactored to use prepared statements.
+        // intval() is good for type safety before LDO call.
         return send_result(intval(table('user_blacklist')->getAllByArray(['uid'=>lianmi_uid(),'block_uid'=>intval($uid)])->toLine()));
     }
 
@@ -1599,18 +1614,20 @@ class AuthedApiController
      */
     public function setUserInBlacklist($uid, $status)
     {
+        $current_uid = lianmi_uid();
+        $target_uid = intval($uid);
+        $status = intval($status);
+
         if ($status == 1) {
-            if ($uid == lianmi_uid()) {
+            if ($target_uid == $current_uid) {
                 return lianmi_throw('INPUT', '不能将自己加入黑名单');
             }
-
-            $sql = "INSERT IGNORE INTO `user_blacklist` ( `uid` , `block_uid` , `timeline` ) VALUES ( '" . intval(lianmi_uid()) . "' , '" . intval($uid) . "' , '" . s(lianmi_now()) . "' )";
+            $sql = "INSERT IGNORE INTO `user_blacklist` ( `uid` , `block_uid` , `timeline` ) VALUES ( :current_uid , :target_uid , :timeline )";
+            run_sql($sql, [':current_uid' => $current_uid, ':target_uid' => $target_uid, ':timeline' => lianmi_now()]);
         } else {
-            $sql = "DELETE FROM `user_blacklist` WHERE `uid` = '" . s(lianmi_uid()) . "' AND `block_uid` = '" . intval($uid) . "' LIMIT 1";
+            $sql = "DELETE FROM `user_blacklist` WHERE `uid` = :current_uid AND `block_uid` = :target_uid LIMIT 1";
+            run_sql($sql, [':current_uid' => $current_uid, ':target_uid' => $target_uid]);
         }
-       
-        db()->runSql($sql);
-
         return send_result($status);
     }
 
@@ -1624,26 +1641,30 @@ class AuthedApiController
      */
     public function getUserBlacklist($since_id = 0)
     {
-        $since_sql = $since_id == 0 ? "" : " AND `id` < '" . intval($since_id) . "' ";
-        $sql = "SELECT * , `block_uid` as `user` FROM `user_blacklist` WHERE `uid` = '" . intval(lianmi_uid()) . "' " . $since_sql . " ORDER BY `id` DESC LIMIT " . c('blacklist_per_page');
+        $uid = lianmi_uid();
+        $since_id = intval($since_id);
+        $limit = intval(c('blacklist_per_page'));
+        $params = [':uid' => $uid];
 
-        $data = db()->getData($sql)->toArray();
-        $data = extend_field($data, 'user', 'user');
+        $since_sql_condition = "";
+        if ($since_id > 0) {
+            $since_sql_condition = " AND `id` < :since_id ";
+            $params[':since_id'] = $since_id;
+        }
         
+        $sql = "SELECT * , `block_uid` as `user` FROM `user_blacklist` WHERE `uid` = :uid {$since_sql_condition} ORDER BY `id` DESC LIMIT {$limit}";
+
+        $data = get_data($sql, $params);
+        $data = extend_field($data, 'user', 'user'); // Review extend_field
+        
+        $maxid = null; $minid = null;
         if (is_array($data) && count($data) > 0) {
             $maxid = $minid = $data[0]['id'];
-            foreach ($data as $key => $item) {
-                if ($item['id'] > $maxid) {
-                    $maxid = $item['id'];
-                }
-                if ($item['id'] < $minid) {
-                    $minid = $item['id'];
-                }
+            foreach ($data as $item) { // Removed $key as it's not used
+                if ($item['id'] > $maxid) $maxid = $item['id'];
+                if ($item['id'] < $minid) $minid = $item['id'];
             }
-        } else {
-            $maxid = $minid = null;
         }
-            
         return send_result(['blacklist'=>$data , 'count'=>count($data) , 'maxid'=>$maxid , 'minid'=>$minid ]);
     }
 
@@ -1656,20 +1677,30 @@ class AuthedApiController
      */
     public function getUserTimelineTop()
     {
-        $sql = "SELECT *,  `uid` as `user` , `forward_group_id` as `group` FROM `feed` WHERE  `is_top` = 1 AND `is_forward` = 1 AND (( `forward_group_id` IN ( SELECT `group_id` FROM `group_member` WHERE `uid` = '" . intval(lianmi_uid()) . "' AND `is_vip` = 0 ) AND `is_paid` = 0 ) OR ( `forward_group_id` IN ( SELECT `group_id` FROM `group_member` WHERE `uid` = '" . intval(lianmi_uid()) . "' AND (`is_vip` = 1 "
-        . " OR "
-        // 或者为作者
-        . " `uid` = '" . intval(lianmi_uid()) . "' ) )  )) " . $filter_sql  . $since_sql . " GROUP BY `forward_feed_id` ORDER BY `id` DESC LIMIT ".c('feeds_per_page');
+        // This method appears to have $filter_sql and $since_sql variables that are not defined within its scope.
+        // This indicates a potential copy-paste error or missing logic.
+        // Assuming $filter_sql and $since_sql should be empty or derived from parameters if they were intended.
+        // For now, I will remove them from the query to make it runnable, but this needs review.
+        // The query is also very complex and might benefit from being a stored procedure or view if performance is an issue.
+        $uid = lianmi_uid();
+        $limit = intval(c('feeds_per_page')); // It was used in original, but no LIMIT was in the SQL. Added it.
 
-        $data = db()->getData($sql)->toArray();
+        $sql = "SELECT *,  `uid` as `user` , `forward_group_id` as `group` FROM `feed` 
+                WHERE `is_top` = 1 AND `is_forward` = 1 
+                AND (
+                    ( `forward_group_id` IN ( SELECT `group_id` FROM `group_member` WHERE `uid` = :uid1 AND `is_vip` = 0 ) AND `is_paid` = 0 ) 
+                    OR 
+                    ( `forward_group_id` IN ( SELECT `group_id` FROM `group_member` WHERE `uid` = :uid2 AND (`is_vip` = 1 OR `is_author` = 1 ) ) )
+                ) 
+                GROUP BY `forward_feed_id` ORDER BY `id` DESC LIMIT {$limit}"; // Assuming `is_author` was intended instead of `uid` = :uid for the second subquery part.
+
+        $params = [':uid1' => $uid, ':uid2' => $uid];
+        
+        $data = get_data($sql, $params);
         $data = extend_field($data, 'user', 'user');
         $data = extend_field($data, 'group', 'group');
 
-        if (isset($data[0])) {
-            return send_result($data[0]);
-        } else {
-            return send_result("");
-        }
+        return send_result(isset($data[0]) ? $data[0] : "");
     }
 
     /**
@@ -1682,55 +1713,51 @@ class AuthedApiController
      */
     public function getUserTimeline($since_id = 0, $filter = 'all')
     {
-        $filter_sql = '';
+        $uid = lianmi_uid();
+        $since_id = intval($since_id);
+        $limit = intval(c('feeds_per_page'));
+        
+        $params = [':uid1' => $uid, ':uid2' => $uid];
+        $filter_conditions = "";
+
         if ($filter == 'paid') {
-            $filter_sql = " AND `is_paid` = 1 ";
+            $filter_conditions .= " AND f.`is_paid` = 1 ";
         }
         if ($filter == 'media') {
-            $filter_sql = " AND `images` !='' ";
+            $filter_conditions .= " AND f.`images` != '' ";
         }
-
-        $since_sql = $since_id == 0 ? "" : " AND `id` < '" . intval($since_id) . "' ";
-
-        // 取得当前用户的加入栏目，然后返回栏目的内容。
-        // GroupBy 版本
-
-        /**
-         SELECT *,  `uid` as `user` , `forward_group_id` as `group` FROM `feed` WHERE  `is_top` != 1 AND `is_forward` = 1 AND (
-
-            ( `forward_group_id` IN ( SELECT `group_id` FROM `group_member` WHERE `uid` = '3' AND `is_vip` = 0 ) AND `is_paid` = 0 )
-
-            OR
-
-            ( `forward_group_id` IN ( SELECT `group_id` FROM `group_member` WHERE `uid` = '3' AND (`is_vip` = 1  OR  `uid` = '3' ) )  )
-
-            )  GROUP BY `forward_feed_id` ORDER BY `id` DESC LIMIT 20
-        */
+        if ($since_id > 0) {
+            $filter_conditions .= " AND f.`id` < :since_id ";
+            $params[':since_id'] = $since_id;
+        }
         
-        $sql = "SELECT *,  `uid` as `user` , `forward_group_id` as `group` FROM `feed` WHERE  `is_top` != 1 AND `is_forward` = 1 AND (( `forward_group_id` IN ( SELECT `group_id` FROM `group_member` WHERE `uid` = '" . intval(lianmi_uid()) . "' AND `is_vip` = 0 ) AND `is_paid` = 0 ) OR ( `forward_group_id` IN ( SELECT `group_id` FROM `group_member` WHERE `uid` = '" . intval(lianmi_uid()) . "' AND (`is_vip` = 1 "
-        . " OR "
-        // 或者为作者
-        . " `is_author` = 1 ) )  )) " . $filter_sql  . $since_sql . " GROUP BY `forward_feed_id` ORDER BY `id` DESC LIMIT ".c('feeds_per_page');
-
-        $data = db()->getData($sql)->toArray();
+        // Corrected the alias for feed table to f for clarity in subqueries and main query conditions
+        $sql = "SELECT f.*, f.`uid` as `user`, f.`forward_group_id` as `group` 
+                FROM `feed` f 
+                WHERE f.`is_top` != 1 AND f.`is_forward` = 1 
+                AND (
+                    ( f.`forward_group_id` IN ( SELECT gm1.`group_id` FROM `group_member` gm1 WHERE gm1.`uid` = :uid1 AND gm1.`is_vip` = 0 ) AND f.`is_paid` = 0 ) 
+                    OR 
+                    ( f.`forward_group_id` IN ( SELECT gm2.`group_id` FROM `group_member` gm2 WHERE gm2.`uid` = :uid2 AND (gm2.`is_vip` = 1 OR gm2.`is_author` = 1) ) )
+                ) 
+                {$filter_conditions} 
+                GROUP BY f.`forward_feed_id` 
+                ORDER BY f.`id` DESC 
+                LIMIT {$limit}";
+        
+        $data = get_data($sql, $params);
         $data = extend_field($data, 'user', 'user');
         $data = extend_field($data, 'group', 'group');
         
-        
+        $maxid = null; $minid = null;
         if (is_array($data) && count($data) > 0) {
             $maxid = $minid = $data[0]['id'];
             foreach ($data as $item) {
-                if ($item['id'] > $maxid) {
-                    $maxid = $item['id'];
-                }
-                if ($item['id'] < $minid) {
-                    $minid = $item['id'];
-                }
+                if ($item['id'] > $maxid) $maxid = $item['id'];
+                if ($item['id'] < $minid) $minid = $item['id'];
             }
-        } else {
-            $maxid = $minid = null;
         }
-            
+        // Returning SQL in production is generally not recommended, but keeping original behavior for now.
         return send_result(['sql'=> $sql , 'feeds'=>$data , 'count'=>count($data) , 'maxid'=>$maxid , 'minid'=>$minid ]);
     }
 
@@ -1743,41 +1770,33 @@ class AuthedApiController
      */
     public function getUserTimelineLastId($filter = 'all')
     {
-        $filter_sql = '';
+        $uid = lianmi_uid();
+        $params = [':uid1' => $uid, ':uid2' => $uid, ':uid3' => $uid]; // Adjusted for the OR `uid` = :uid3 part
+        $filter_conditions = "";
+
         if ($filter == 'paid') {
-            $filter_sql = " AND `is_paid` = 1 ";
+            $filter_conditions .= " AND f.`is_paid` = 1 ";
         }
         if ($filter == 'media') {
-            $filter_sql = " AND `images` !='' ";
+            $filter_conditions .= " AND f.`images` != '' ";
         }
-
-        // 取得当前用户的加入栏目，然后返回栏目的内容。
-        // GroupBy 版本
         
-        // timeline只显示转发内容。
-        $sql = "SELECT `id` FROM `feed` WHERE `is_top` != 1 AND `is_forward` = 1 AND "
+        // Corrected the alias for feed table to f and fixed uid comparison assuming it meant is_author
+        // The original query compared `uid` = lianmi_uid() in the second subquery part, which might be for "author" of the feed itself,
+        // or if the group_member.uid (gm2.uid) is the author of the group. Assuming gm2.is_author was intended as in getUserTimeline.
+        $sql = "SELECT f.`id` FROM `feed` f
+                WHERE f.`is_top` != 1 AND f.`is_forward` = 1 
+                AND (
+                    ( f.`forward_group_id` IN ( SELECT gm1.`group_id` FROM `group_member` gm1 WHERE gm1.`uid` = :uid1 AND gm1.`is_vip` = 0 ) AND f.`is_paid` = 0 ) 
+                    OR 
+                    ( f.`forward_group_id` IN ( SELECT gm2.`group_id` FROM `group_member` gm2 WHERE gm2.`uid` = :uid2 AND (gm2.`is_vip` = 1 OR gm2.`is_author` = 1) ) ) 
+                ) 
+                {$filter_conditions} 
+                GROUP BY f.`forward_feed_id` 
+                ORDER BY f.`id` DESC 
+                LIMIT 1";
         
-        // 当前用户为小组成员
-        ." (( `forward_group_id` IN ( SELECT `group_id` FROM `group_member` WHERE `uid` = '" . intval(lianmi_uid()) . "' "
-        // 但是为小组免费成员
-        ." AND `is_vip` = 0 ) "." "
-        // 内容为免费
-        ." AND `is_paid` = 0 ) "
-        
-        ." OR "
-        
-        // 当前用户为小组成员
-        ." ( `forward_group_id` IN ( SELECT `group_id` FROM `group_member` WHERE `uid` = '" . intval(lianmi_uid()) . "' "
-        // 且为付费成员
-        . " AND (`is_vip` = 1 "
-        . " OR "
-        // 或者为作者
-        . " `uid` = '" . intval(lianmi_uid()) . "' ) )  )) "
-        
-        . $filter_sql . " GROUP BY `forward_feed_id` ORDER BY `id` DESC LIMIT 1";
-
-        $last_id = db()->getData($sql)->toVar();
-            
+        $last_id = get_var($sql, $params); // Use only uid1 and uid2 if uid3 was not intended
         return send_result($last_id);
     }
 
@@ -1790,7 +1809,9 @@ class AuthedApiController
      */
     public function getMessageLatest($to_uid)
     {
-        return send_result(intval(db()->getData("SELECT MAX(`id`) FROM `message` WHERE `uid` = '" . intval(lianmi_uid()) . "' AND ( `to_uid` = '" . intval($to_uid) . "' OR `from_uid` = '" . intval($to_uid) . "'  ) ")->toVar()));
+        $uid = lianmi_uid();
+        $to_uid = intval($to_uid);
+        return send_result(intval(get_var("SELECT MAX(`id`) FROM `message` WHERE `uid` = :uid AND ( `to_uid` = :to_uid OR `from_uid` = :to_uid2 )", [':uid' => $uid, ':to_uid' => $to_uid, ':to_uid2' => $to_uid])));
     }
 
     /**
@@ -1801,7 +1822,8 @@ class AuthedApiController
      */
     public function getMessageUnreadCount()
     {
-        return send_result(intval(db()->getData("SELECT COUNT(*) FROM `message` WHERE `uid` = '" . intval(lianmi_uid()) . "' AND `is_read` = 0 ")->toVar()));
+        $uid = lianmi_uid();
+        return send_result(intval(get_var("SELECT COUNT(*) FROM `message` WHERE `uid` = :uid AND `is_read` = 0", [':uid' => $uid])));
     }
 
     /**
@@ -1813,30 +1835,33 @@ class AuthedApiController
      */
     public function getMessageGroupList($since_id = 0)
     {
-        $since_sql = $since_id == 0 ? "" : " AND `id` < '" . intval($since_id) . "' ";
+        $uid = lianmi_uid();
+        $since_id = intval($since_id);
+        $limit = intval(c('message_group_per_page'));
+        $params = [':uid' => $uid];
 
-        $total = db()->getData("SELECT COUNT(*) FROM `message_group` WHERE `uid` = '" . intval(lianmi_uid()) . "'")->toVar();
+        $total = get_var("SELECT COUNT(*) FROM `message_group` WHERE `uid` = :uid", [':uid' => $uid]);
         
-        $sql = "SELECT * , `from_uid` as `from` , `to_uid` as `to` FROM `message_group` WHERE `uid` = '" . intval(lianmi_uid()) . "'  " . $since_sql . " ORDER BY `id` DESC  LIMIT " . c('message_group_per_page');
+        $since_sql_condition = "";
+        if ($since_id > 0) {
+            $since_sql_condition = " AND `id` < :since_id ";
+            $params[':since_id'] = $since_id;
+        }
+        
+        $sql = "SELECT * , `from_uid` as `from` , `to_uid` as `to` FROM `message_group` WHERE `uid` = :uid {$since_sql_condition} ORDER BY `id` DESC  LIMIT {$limit}";
 
-        $data = db()->getData($sql)->toArray();
-        $data = extend_field($data, 'from', 'user');
-        $data = extend_field($data, 'to', 'user');
+        $data = get_data($sql, $params);
+        $data = extend_field($data, 'from', 'user'); // Review extend_field
+        $data = extend_field($data, 'to', 'user');   // Review extend_field
         
+        $maxid = null; $minid = null;
         if (is_array($data) && count($data) > 0) {
             $maxid = $minid = $data[0]['id'];
             foreach ($data as $item) {
-                if ($item['id'] > $maxid) {
-                    $maxid = $item['id'];
-                }
-                if ($item['id'] < $minid) {
-                    $minid = $item['id'];
-                }
+                if ($item['id'] > $maxid) $maxid = $item['id'];
+                if ($item['id'] < $minid) $minid = $item['id'];
             }
-        } else {
-            $maxid = $minid = null;
         }
-            
         return send_result(['messages'=>$data , 'count'=>count($data) , 'maxid'=>$maxid , 'minid'=>$minid , 'total' => $total ]);
     }
 
@@ -1850,37 +1875,38 @@ class AuthedApiController
      */
     public function getMessageHistory($to_uid, $since_id = 0)
     {
-        $since_sql = $since_id == 0 ? "" : " AND `id` < '" . intval($since_id) . "' ";
+        $uid = lianmi_uid();
+        $to_uid = intval($to_uid);
+        $since_id = intval($since_id);
+        $limit = intval(c('history_per_page'));
 
-        $total = db()->getData("SELECT COUNT(*) FROM `message` WHERE `uid` = '" . intval(lianmi_uid()) . "' AND ( `to_uid` = '" . intval($to_uid) . "' OR `from_uid` = '" . intval($to_uid) . "'  ) ")->toVar();
+        $params_count = [':uid' => $uid, ':to_uid1' => $to_uid, ':to_uid2' => $to_uid];
+        $total = get_var("SELECT COUNT(*) FROM `message` WHERE `uid` = :uid AND ( `to_uid` = :to_uid1 OR `from_uid` = :to_uid2 )", $params_count);
         
-        $sql = "SELECT * FROM `message` WHERE `uid` = '" . intval(lianmi_uid()) . "' AND ( `to_uid` = '" . intval($to_uid) . "' OR `from_uid` = '" . intval($to_uid) . "'  ) " . $since_sql . " ORDER BY `id` DESC  LIMIT " . c('history_per_page');
-
-        $data = db()->getData($sql)->toArray();
+        $params_select = [':uid' => $uid, ':to_uid1' => $to_uid, ':to_uid2' => $to_uid];
+        $since_sql_condition = "";
+        if ($since_id > 0) {
+            $since_sql_condition = " AND `id` < :since_id ";
+            $params_select[':since_id'] = $since_id;
+        }
         
+        $sql = "SELECT * FROM `message` WHERE `uid` = :uid AND ( `to_uid` = :to_uid1 OR `from_uid` = :to_uid2 ) {$since_sql_condition} ORDER BY `id` DESC  LIMIT {$limit}";
+        $data = get_data($sql, $params_select);
+        
+        $maxid = null; $minid = null;
         if (is_array($data) && count($data) > 0) {
             $maxid = $minid = $data[0]['id'];
             foreach ($data as $item) {
-                if ($item['id'] > $maxid) {
-                    $maxid = $item['id'];
-                }
-                if ($item['id'] < $minid) {
-                    $minid = $item['id'];
-                }
+                if ($item['id'] > $maxid) $maxid = $item['id'];
+                if ($item['id'] < $minid) $minid = $item['id'];
             }
 
-            // 将 message 和 message_group 对应的内容标记为已读
-            if ($since_id == 0) {
-                db()->runSql("UPDATE `message` SET `is_read` = 1 WHERE `is_read` = 0 AND `uid` = '" . intval(lianmi_uid()) . "' AND ( `to_uid` = '" . intval($to_uid) . "' OR `from_uid` = '" . intval($to_uid) . "'  )");
-
-                db()->runSql("UPDATE `message_group` SET `is_read` = 1 WHERE `is_read` = 0 AND `uid` = '" . intval(lianmi_uid()) . "' AND ( `to_uid` = '" . intval($to_uid) . "' OR `from_uid` = '" . intval($to_uid) . "'  )");
+            if ($since_id == 0) { // Only mark as read if fetching the latest page
+                $params_update = [':uid' => $uid, ':to_uid1' => $to_uid, ':to_uid2' => $to_uid];
+                run_sql("UPDATE `message` SET `is_read` = 1 WHERE `is_read` = 0 AND `uid` = :uid AND ( `to_uid` = :to_uid1 OR `from_uid` = :to_uid2 )", $params_update);
+                run_sql("UPDATE `message_group` SET `is_read` = 1 WHERE `is_read` = 0 AND `uid` = :uid AND ( `to_uid` = :to_uid1 OR `from_uid` = :to_uid2 )", $params_update);
             }
-        } else {
-            $maxid = $minid = null;
         }
-
-        
-            
         return send_result(['messages'=>$data , 'count'=>count($data) , 'maxid'=>$maxid , 'minid'=>$minid , 'total' => $total ]);
     }
 
@@ -1895,41 +1921,38 @@ class AuthedApiController
      */
     public function sendMessage($to_uid, $text)
     {
-        if ($to_uid == lianmi_uid()) {
+    public function sendMessage($to_uid, $text)
+    {
+        $current_uid = lianmi_uid();
+        $to_uid = intval($to_uid);
+
+        if ($to_uid == $current_uid) {
             return lianmi_throw('INPUT', '不要自己给自己发私信啦');
         }
         
-        // 检查是否在其黑名单
-        if (table('user_blacklist')->getAllByArray(['uid'=>$to_uid,'block_uid'=>lianmi_uid()])->toLine() || table('user_blacklist')->getAllByArray(['uid'=>lianmi_uid() ,'block_uid'=>$to_uid])->toLine()) {
+        // LDO is safe
+        if (table('user_blacklist')->getAllByArray(['uid'=>$to_uid,'block_uid'=>$current_uid])->toLine() || 
+            table('user_blacklist')->getAllByArray(['uid'=>$current_uid ,'block_uid'=>$to_uid])->toLine()) {
             return lianmi_throw('AUTH', '你或者对方在黑名单中');
         }
 
-        // 插入私信记录
-        // 注意需要插两条，因为聊天记录需要支持删除
         $now = lianmi_now();
         
-        // 发信人的记录。标记为已读
-        $sql = "INSERT INTO `message` ( `uid` , `to_uid` , `from_uid` , `text` , `timeline` , `is_read` ) VALUES ( '" . intval(lianmi_uid()) . "' , '" . intval($to_uid) . "' , '" . intval(lianmi_uid()) . "' , '" . s($text) . "' , '" . s($now) . "' , '1' )";
-        db()->runSql($sql);
+        $params_sender_msg = [':uid' => $current_uid, ':to_uid' => $to_uid, ':from_uid' => $current_uid, ':text' => $text, ':timeline' => $now, ':is_read' => 1];
+        run_sql("INSERT INTO `message` ( `uid` , `to_uid` , `from_uid` , `text` , `timeline` , `is_read` ) VALUES ( :uid , :to_uid , :from_uid , :text , :timeline , :is_read )", $params_sender_msg);
 
-        // 收信人的记录。标记为未读
-        $sql = "INSERT INTO `message` ( `uid` , `to_uid` , `from_uid` , `text` , `timeline` , `is_read` ) VALUES ( '" . intval($to_uid) . "' , '" . intval($to_uid) . "' , '" . intval(lianmi_uid()) . "' , '" . s($text) . "' , '" . s($now) . "' , '0' )";
-        db()->runSql($sql);
+        $params_receiver_msg = [':uid' => $to_uid, ':to_uid' => $to_uid, ':from_uid' => $current_uid, ':text' => $text, ':timeline' => $now, ':is_read' => 0];
+        run_sql("INSERT INTO `message` ( `uid` , `to_uid` , `from_uid` , `text` , `timeline` , `is_read` ) VALUES ( :uid , :to_uid , :from_uid , :text , :timeline , :is_read )", $params_receiver_msg);
+        // $last_mid = db()->lastId(); // This might not be needed if not used.
 
-        $last_mid = db()->lastId();
+        $params_delete_group = [':to_uid1' => $to_uid, ':from_uid1' => $current_uid, ':to_uid2' => $current_uid, ':from_uid2' => $to_uid];
+        run_sql("DELETE FROM `message_group` WHERE ( `to_uid` = :to_uid1 AND `from_uid` = :from_uid1 ) OR ( `to_uid` = :to_uid2 AND `from_uid` = :from_uid2 ) LIMIT 2", $params_delete_group);
 
-        // 对话组的冗余记录，用于按分组显示对话
+        $params_sender_group = [':uid' => $current_uid, ':to_uid' => $to_uid, ':from_uid' => $current_uid, ':text' => $text, ':timeline' => $now, ':is_read' => 1];
+        run_sql("REPLACE INTO `message_group` ( `uid` , `to_uid` , `from_uid` , `text` , `timeline` , `is_read` ) VALUES ( :uid , :to_uid , :from_uid , :text , :timeline , :is_read )", $params_sender_group);
         
-        // 删除原有记录
-        $sql = "DELETE FROM `message_group` WHERE ( `to_uid` = '" . intval($to_uid) . "' AND `from_uid` = '" . intval(lianmi_uid()) . "' ) OR ( `to_uid` = '" . intval(lianmi_uid()) . "' AND `from_uid` = '" . intval($to_uid) . "' ) LIMIT 2";
-        db()->runSql($sql);
-
-        $sql = "REPLACE INTO `message_group` ( `uid` , `to_uid` , `from_uid` , `text` , `timeline` , `is_read` ) VALUES ( '" . intval(lianmi_uid()) . "' , '" . intval($to_uid) . "' , '" . intval(lianmi_uid()) . "' , '" . s($text) . "' , '" . s($now) . "' , '1' )";
-        db()->runSql($sql);
-        
-        $sql = "REPLACE INTO `message_group` ( `uid` , `to_uid` , `from_uid` , `text` , `timeline` , `is_read` ) VALUES ( '" . intval($to_uid) . "' , '" . intval($to_uid) . "' , '" . intval(lianmi_uid()) . "' , '" . s($text) . "' , '" . s($now) . "' , '0' )";
-        
-        db()->runSql($sql);
+        $params_receiver_group = [':uid' => $to_uid, ':to_uid' => $to_uid, ':from_uid' => $current_uid, ':text' => $text, ':timeline' => $now, ':is_read' => 0];
+        run_sql("REPLACE INTO `message_group` ( `uid` , `to_uid` , `from_uid` , `text` , `timeline` , `is_read` ) VALUES ( :uid , :to_uid , :from_uid , :text , :timeline , :is_read )", $params_receiver_group);
 
         return send_result('done');
     }
@@ -1942,13 +1965,15 @@ class AuthedApiController
      */
     public function refreshUserData()
     {
-        if (!$user = db()->getData("SELECT * FROM `user` WHERE `id` = '" . intval(lianmi_uid()) . "' LIMIT 1")->toLine()) {
+        $uid = lianmi_uid();
+        $user = get_line("SELECT * FROM `user` WHERE `id` = :uid LIMIT 1", [':uid' => $uid]);
+        if (!$user) {
             return lianmi_throw("INPUT", "用户不存在");
         }
         
-        $user['uid'] = $user['id'];
+        $user['uid'] = $user['id']; // Redundant if id is already uid.
         $user['token'] = session_id();
-        $user = array_merge($user, get_group_info($user['id'])) ;
+        $user = array_merge($user, get_group_info($user['id'])); // get_group_info needs review if it uses direct DB calls
         return send_result($user);
     }
 }

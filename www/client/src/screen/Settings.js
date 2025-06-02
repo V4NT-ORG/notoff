@@ -12,7 +12,7 @@ import Dropzone from 'react-dropzone';
 import ReactAvatarEditor from 'react-avatar-editor';
 import Web3 from 'web3';
 
-import { Button, FormGroup, Intent, Slider, Spinner, NonIdealState } from "@blueprintjs/core";
+import { Button, FormGroup, Intent, Slider, Spinner, NonIdealState, Switch } from "@blueprintjs/core"; // Added Switch
 import { isApiOk, showApiError, toast, is_fo_address } from '../util/Function';
 import VisibilitySensor from 'react-visibility-sensor';
 
@@ -372,7 +372,16 @@ export default class Settings extends Component
 
         const preference_box = this.state.user && <div className="formbox">
         <form className="px10list">
-        <FormGroup label={t("个人卡片封底背景")}>
+            <FormGroup label={t("界面偏好")}>
+                <Switch
+                    checked={this.props.store.darkMode}
+                    label={t("夜间模式")}
+                    onChange={this.props.store.toggleDarkMode}
+                    large={true}
+                    alignIndicator="right"
+                />
+            </FormGroup>
+            <FormGroup label={t("个人卡片封底背景")}>
             <div className="editbox">
                 <ReactAvatarEditor ref={(editor)=>this.coverEditor=editor} width={400} height={168}  border={1} image={this.state.cover} scale={this.state.scale} className="theavatar" crossOrigin="anonymous"/>
                 <Slider
@@ -385,7 +394,7 @@ export default class Settings extends Component
                     value={this.state.scale}
                     vertical={true}
                     showTrackFill={true}
-                /> 
+                />
             </div>
         </FormGroup>
         <div className="buttonbar_inline">
@@ -395,7 +404,7 @@ export default class Settings extends Component
 
             <Button large={true} intent={Intent.PRIMARY} text={t("更新")} onClick={e=>this.cover(e)} />
             
-        </div>    
+        </div>
         </form></div>;
 
         const blacklist_box = <div>
@@ -426,23 +435,23 @@ export default class Settings extends Component
         const main = <div className="blocklist">
             <div className="feedfilter sticky">
                 <div >
-                    <ActivityLink label={t("资料")} to={"/settings/profile"} />
+                    <ActivityLink label={t("资料")} to={"/settings/profile"} activeOnlyWhenExact={true}/>
                 </div>
                 <div >
-                <ActivityLink label={t("头像")} to={"/settings/avatar"} />
+                <ActivityLink label={t("头像")} to={"/settings/avatar"} activeOnlyWhenExact={true}/>
                 </div>
                 <div>
-                <ActivityLink label={t("密码")} to={"/settings/password"} />
+                <ActivityLink label={t("密码")} to={"/settings/password"} activeOnlyWhenExact={true}/>
                 </div>
                 <div>
-                <ActivityLink label={t("偏好")} to={"/settings/preference"} />
+                <ActivityLink label={t("偏好")} to={"/settings/preference"} activeOnlyWhenExact={true}/>
                 </div>
                 <div>
-                <ActivityLink label={t("黑名单")} to={"/settings/blacklist"} />
+                <ActivityLink label={t("黑名单")} to={"/settings/blacklist"} activeOnlyWhenExact={true}/>
                 </div>
 
-            </div>   
-            <div className="settingbox">{main_box}</div>     
+            </div>
+            <div className="settingbox">{main_box}</div>
         </div>;
 
         

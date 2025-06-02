@@ -5,7 +5,7 @@ import { withRouter } from 'react-router-dom';
 import { translate } from 'react-i18next';
 
 import ActivityLink from '../util/ActivityLink';
-import { Button, AnchorButton } from "@blueprintjs/core";
+import { Button, AnchorButton, InputGroup, Position, Tooltip } from "@blueprintjs/core"; // Added InputGroup, Position, Tooltip
 
 import LangIcon from './LangIcon';
 import UserMenu from './UserMenu';
@@ -19,8 +19,24 @@ import Icon from '../Icon';
 @observer
 export default class Header extends Component
 {
-    state = {"unread":0}
+    state = {"unread":0, "searchTerm": ""}
     
+    handleSearchChange = (event) => {
+        this.setState({ searchTerm: event.target.value });
+    }
+
+    handleSearchSubmit = (event) => {
+        if (event.key === 'Enter' || event.type === 'click') {
+            event.preventDefault();
+            const { searchTerm } = this.state;
+            if (searchTerm.trim() !== '') {
+                this.props.history.push(`/search?q=${encodeURIComponent(searchTerm.trim())}`);
+                // Optionally clear search term after submission
+                // this.setState({ searchTerm: "" }); 
+            }
+        }
+    }
+
     componentDidMount()
     {
         this.loadUnread();
@@ -94,23 +110,35 @@ export default class Header extends Component
                     </div>
                     
                     <div className="right">
+                        <div className="search-bar-wrapper">
+                             <InputGroup
+                                className="search-input"
+                                leftIcon="search"
+                                placeholder={t("搜索内容...")}
+                                value={this.state.searchTerm}
+                                onChange={this.handleSearchChange}
+                                onKeyPress={this.handleSearchSubmit}
+                                round={true}
+                                large={false} // Make it slightly smaller to fit header
+                                rightElement={
+                                    this.state.searchTerm ? 
+                                    <Button icon="arrow-right" minimal={true} onClick={this.handleSearchSubmit} /> : undefined
+                                }
+                            />
+                        </div>
+
                         { toInt(user.id) !== 0 && 
                         <div className="userbox">
-
                             <UserAvatar data={user} className="avatar"/>
-                            
                             <UserMenu />
-
                             <LangIcon className="left5"/>
-
-                            { this.props.store.user.group_count > 0 && <Button className="pointer left5" icon="edit" title={t("发布内容")} minimal={true} onClick={()=>this.props.store.float_editor_open = !this.props.store.float_editor_open} /> }
-                            
-                            
-                            
-                        
+                            { this.props.store.user.group_count > 0 && 
+                                <Tooltip content={t("发布内容")} position={Position.BOTTOM}>
+                                    <Button className="pointer left5" icon="edit" minimal={true} onClick={()=>this.props.store.float_editor_open = !this.props.store.float_editor_open} />
+                                </Tooltip>
+                            }
                         </div> } 
                     </div>
-                      
                 </div>
             </div>
         </div>;

@@ -85,46 +85,60 @@ class Ldo extends LmObject
                     $array = array_shift($arguments);
                     if( is_array($array) )
                     {
+                        $params = [];
                         foreach ($array as $key => $value) 
                         {
-                            $where_array[] = "`" . $key . "` = '" . s($value) . "'"; 
+                            // Use named placeholders, e.g., :name
+                            $placeholder = ':' . $key;
+                            $where_array[] = "`" . $key . "` = " . $placeholder; 
+                            $params[$placeholder] = $value;
                         }
 
                         if( isset( $where_array ) )
                             $where_sql =  join( ' AND ' ,  $where_array ) ;
                         else
-                            $where_sql = ' 1 ';
+                            $where_sql = ' 1 '; // No conditions if array is empty
                     }
                     else
-                        $where_sql = ' 1 ';
+                        $where_sql = ' 1 '; // No conditions if $array is not an array
                 } 
-                else
+                else // Single field condition, e.g., ById(1)
                 {
                     $value = array_shift($arguments);
-                    $where_sql = " `" . $where . "` = '" . s( $value ) . "' ";
+                    // Use a named placeholder, e.g., :id
+                    $placeholder = ':' . $where;
+                    $where_sql = " `" . $where . "` = " . $placeholder . " ";
+                    $params = [$placeholder => $value];
                 }
-                    
+            } else { // No WHERE clause (e.g., getAll(), findNameByNothing())
+                 $where_sql = ' 1 ';
+                 $params = [];
             }
             
 
             if( $limit )
             {
+                // LIMIT clause cannot use prepared statement parameters directly in PDO.
+                // It must be integers.
                 if($limit_info = array_shift($arguments))
                 {
-                    if( is_array( $limit_info ) ) 
-                        $limit_sql = " LIMIT ".$limit_info[0] . " , " . $limit_info[1];
-                    elseif( ne( $limit_info  ) ) $limit_sql = " LIMIT ".$limit_info;
-                    else $limit_sql = " ";
+                    if( is_array( $limit_info ) && count($limit_info) == 2 && is_numeric($limit_info[0]) && is_numeric($limit_info[1])) {
+                        $limit_sql = " LIMIT ".intval($limit_info[0]) . " , " . intval($limit_info[1]);
+                    } elseif ( is_numeric( $limit_info  ) ) {
+                        $limit_sql = " LIMIT ".intval($limit_info);
+                    } else {
+                        $limit_sql = " "; // Invalid limit format
+                    }
                 }
                 else $limit_sql = " ";
             }else $limit_sql = " ";
 
             $sql = "SELECT {$select_sql} FROM `{$this->table}` WHERE {$where_sql} {$limit_sql}";
-            //echo $sql . "<br/>";
-            return $this->db->getData($sql);       
+            //echo $sql . "<br/>" . print_r($params, true) . "<br/>";
+            return $this->db->getData($sql, $params);       
 
         }
-        else throw new \Exception("Method not exists".$name);
+        else throw new \Exception("Method not exists: ".$name);
         
         
     }
