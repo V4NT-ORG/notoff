@@ -1,6 +1,6 @@
 import React, { Component } from 'react';
 import { observer , inject } from 'mobx-react';
-import { translate , Trans } from 'react-i18next';
+import { withTranslation , Trans } from 'react-i18next';
 import { withRouter } from 'react-router-dom';
 import { Button, FormGroup, Intent,  Tab, Tabs} from "@blueprintjs/core";
 import Icon from '../Icon';
@@ -12,7 +12,7 @@ import ScrollTopView from '../component/ScrollTopView';
 import DocumentTitle from 'react-document-title';
 import CookieConsent from "react-cookie-consent";
 
-@translate()
+@withTranslation()
 @inject("store")
 @withRouter
 @observer

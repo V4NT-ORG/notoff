@@ -2,7 +2,7 @@ import React, { Component } from 'react';
 import { observer , inject } from 'mobx-react';
 import { Link } from "react-router-dom";
 import { withRouter } from 'react-router-dom';
-import { translate } from 'react-i18next';
+import { withTranslation } from 'react-i18next';
 
 import Column3Layout from '../component/Column3Layout';
 import UserCard from '../component/UserCard';
@@ -15,7 +15,7 @@ import VisibilitySensor from 'react-visibility-sensor';
 import { Intent, Spinner, Button, NonIdealState } from "@blueprintjs/core";
 
 @withRouter
-@translate()
+@withTranslation()
 @inject("store")
 @observer
 export default class GroupContribute extends Component

@@ -2,7 +2,7 @@ import React, { Component } from 'react';
 import { observer , inject } from 'mobx-react';
 import { Link } from "react-router-dom";
 import { withRouter } from 'react-router-dom';
-import { translate } from 'react-i18next';
+import { withTranslation } from 'react-i18next';
 import { toast , showApiError } from '../util/Function';
 import { Button, FormGroup, Intent, InputGroup, Callout, Spinner } from '@blueprintjs/core';
 
@@ -12,7 +12,7 @@ import ABI from '../util/ABI';
 import Column3Layout from '../component/Column3Layout';
 import UserCard from '../component/UserCard';
 
-@translate()
+@withTranslation()
 @inject("store")
 @withRouter
 @observer
