@@ -5,7 +5,7 @@ import { withRouter } from 'react-router-dom';
 import { translate } from 'react-i18next';
 import { Intent, Spinner, NonIdealState, ButtonGroup, Button } from "@blueprintjs/core";
 
-import Cloumn3Layout from '../component/Cloumn3Layout';
+import Column3Layout from '../component/Column3Layout';
 import UserCard from '../component/UserCard';
 import { isApiOk, showApiError, toInt } from '../util/Function';
 
@@ -179,6 +179,6 @@ export default class UserDetail extends Component
             { !is_me && <ButtonGroup className="blacklistbuttonbox hcenter"><Button text={t("私信")} intent={Intent.PRIMARY} icon="chat" onClick={()=>this.im(uid)}/><BlacklistButton uid={uid}/></ButtonGroup> }
         </Fragment>;
 
-        return <DocumentTitle title={title}><Cloumn3Layout left={left} main={main} /></DocumentTitle>;
+        return <DocumentTitle title={title}><Column3Layout left={left} main={main} /></DocumentTitle>;
     }
 }

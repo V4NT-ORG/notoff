@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { withRouter } from 'react-router-dom';
 import { translate } from 'react-i18next';
 
-import Cloumn3Layout from '../component/Cloumn3Layout';
+import Column3Layout from '../component/Column3Layout';
 import UserCard from '../component/UserCard';
 import DocumentTitle from 'react-document-title';
 import ActivityLink from '../util/ActivityLink';
@@ -447,6 +447,6 @@ export default class Settings extends Component
 
         
 
-        return <DocumentTitle title={t('设置')+'@'+this.props.store.appname}><Cloumn3Layout left={<UserCard/>} main={main} /></DocumentTitle>;
+        return <DocumentTitle title={t('设置')+'@'+this.props.store.appname}><Column3Layout left={<UserCard/>} main={main} /></DocumentTitle>;
     }
 }

@@ -9,7 +9,7 @@ import { Button, FormGroup, Intent, InputGroup, Callout, Spinner } from '@bluepr
 // import Web3 from 'web3';
 import ABI from '../util/ABI';
 
-import Cloumn3Layout from '../component/Cloumn3Layout';
+import Column3Layout from '../component/Column3Layout';
 import UserCard from '../component/UserCard';
 
 @translate()
@@ -167,6 +167,6 @@ export default class GroupPay extends Component
                 </div>}
             </form>
             </div></div>    ;
-        return <Cloumn3Layout left={<UserCard/>} main={main} />;
+        return <Column3Layout left={<UserCard/>} main={main} />;
     }
 }

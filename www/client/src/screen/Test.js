@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { withRouter } from 'react-router-dom';
 import { translate } from 'react-i18next';
 
-import Cloumn3Layout from '../component/Cloumn3Layout';
+import Column3Layout from '../component/Column3Layout';
 import UserCard from '../component/UserCard';
 import DocumentTitle from 'react-document-title';
 
@@ -23,6 +23,6 @@ export default class Test extends Component
     {
         const { t } = this.props;
         const main = <div></div>;
-        return <DocumentTitle title={''+'@'+t(this.props.store.appname)}><Cloumn3Layout left={<UserCard/>} main={main} /></DocumentTitle>;
+        return <DocumentTitle title={''+'@'+t(this.props.store.appname)}><Column3Layout left={<UserCard/>} main={main} /></DocumentTitle>;
     }
 }

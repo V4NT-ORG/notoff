@@ -9,7 +9,7 @@ import BackButton from '../component/BackButton';
 
 import Web3 from 'web3';
 
-import Cloumn3Layout from '../component/Cloumn3Layout';
+import Column3Layout from '../component/Column3Layout';
 import GroupCard from '../component/GroupCard';
 // import BuyVipButtonFo from '../component/BuyVipButtonFo';
 import BuyVipButton from '../component/BuyVipButton';
@@ -312,6 +312,6 @@ export default class GroupDetail extends Component
             }
         </div>;
 
-        return <DocumentTitle title={this.state.group.name+'@'+t(this.props.store.appname)}><Cloumn3Layout left={left} main={main} /></DocumentTitle>
+        return <DocumentTitle title={this.state.group.name+'@'+t(this.props.store.appname)}><Column3Layout left={left} main={main} /></DocumentTitle>
     }
 }

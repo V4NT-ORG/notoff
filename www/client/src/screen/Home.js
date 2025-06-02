@@ -7,7 +7,7 @@ import { toast , showApiError , inGroup, isApiOk, toInt } from '../util/Function
 import { Button, ButtonGroup, Callout , Intent, Spinner, NonIdealState } from "@blueprintjs/core";
 
 
-import Cloumn3Layout from '../component/Cloumn3Layout';
+import Column3Layout from '../component/Column3Layout';
 import UserCard from '../component/UserCard';
 import PublishBox from '../component/PublishBox';
 import FeedItem from '../component/FeedItem'; 
@@ -183,7 +183,7 @@ export default class Home extends Component
         </div>;
 
         
-        const page = this.state.loaded ? <DocumentTitle title={t("首页")+'@'+t(this.props.store.appname)}><Cloumn3Layout  left={<UserCard/>} main={main} /></DocumentTitle> : null;
+        const page = this.state.loaded ? <DocumentTitle title={t("首页")+'@'+t(this.props.store.appname)}><Column3Layout  left={<UserCard/>} main={main} /></DocumentTitle> : null;
         return page;
     }
 }
