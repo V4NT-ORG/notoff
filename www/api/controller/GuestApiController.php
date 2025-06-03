@@ -265,6 +265,13 @@ class GuestApiController
         if (!$can_see) {
             return lianmi_throw('AUTH', '该内容为付费内容，仅限VIP订户查看');
         }
+
+        // Increment view_count if feed is published and viewable
+        if ($feed && isset($feed['status']) && $feed['status'] == 'published' && $can_see) {
+            run_sql("UPDATE `feed` SET `view_count` = `view_count` + 1 WHERE `id` = :id", [':id' => $id]);
+            // Optionally, update $feed['view_count'] for the response if desired, though not critical for analytics.
+            // $feed['view_count'] = (isset($feed['view_count']) ? $feed['view_count'] + 1 : 1);
+        }
         
         if ($feed['is_forward'] == 1) $feed['group'] = $feed['forward_group_id']; // Ensure 'group' field has the correct group ID for extend_field
         
